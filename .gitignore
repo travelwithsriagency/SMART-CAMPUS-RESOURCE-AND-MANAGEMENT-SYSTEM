@@ -1,0 +1,6 @@
+node_modules/
+dist/
+.vscode/
+*.exe
+campus-backend/campus_server
+mit-smart-campus-frontend.zip
