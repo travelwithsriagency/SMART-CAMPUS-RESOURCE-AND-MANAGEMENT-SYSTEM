@@ -509,14 +509,20 @@ function CampusDashboard() {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">M</div>
-          <div>
+          <div className="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" role="presentation">
+              <path d="M24 3 39 9v12c0 11-6 18-15 24C15 39 9 32 9 21V9z" fill="none" stroke="currentColor" strokeWidth="1.7" />
+              <path d="M15 29V17h4l5 7 5-7h4v12h-4v-6l-5 6-5-6v6z" fill="currentColor" />
+              <path d="M17 12h14" stroke="currentColor" strokeWidth="1.4" />
+            </svg>
+          </div>
+          <div className="brand-copy">
             <div className="brand-name">MADRAS INSTITUTE OF TECHNOLOGY</div>
-            <div className="brand-caption">ANNA UNIVERSITY · CHROMEPET</div>
+            <div className="brand-caption">ANNA UNIVERSITY <span>·</span> CHROMEPET</div>
           </div>
         </div>
 
-        <div className="campus-label">UNIVERSITY MANAGEMENT</div>
+        <div className="campus-label">CAMPUS PORTAL</div>
 
         {navGroups.map((group) => (
           <div className="nav-group" key={group.title}>
@@ -549,32 +555,32 @@ function CampusDashboard() {
         <div className="sidebar-bottom">
           <div className="status-dot" />
           <div>
-            <div className="sidebar-status">Local workspace</div>
-            <div className="sidebar-small">No cloud account required</div>
+            <div className="sidebar-status">Campus portal</div>
+            <div className="sidebar-small">{apiStatus}</div>
           </div>
+          <button className="header-signin" onClick={() => { setPage("Overview"); setNotice(""); }}>
+            Campus portal <span>↗</span>
+          </button>
         </div>
       </aside>
 
       <main className="main-content">
         <header className="topbar">
           <div className="breadcrumb">
-            <span>MIT Smart Campus</span>
+            <button onClick={() => setPage("Overview")}>Home</button>
             <span className="crumb-divider">/</span>
-            <strong>{page}</strong>
+            <strong>{page === "Overview" ? "University" : page}</strong>
           </div>
           <div className="topbar-right">
             <span className="environment-pill">
               <span className="small-dot" />
-              {apiStatus}
+              {apiStatus === "Connected" ? "Campus services online" : apiStatus}
             </span>
-            <button className="button button-secondary button-small" onClick={checkBackend}>
-              ↻ Check backend
-            </button>
-            <div className="avatar">M</div>
+            <button className="button button-secondary button-small" onClick={checkBackend}>↻ Refresh</button>
           </div>
         </header>
 
-        <section className="page-body">
+        <section className={`page-body ${page === "Overview" ? "landing-page" : ""}`}>
           <div className={`page-heading ${page === "Overview" ? "overview-heading" : ""}`}>
             <div>
               <div className="eyebrow">MIT · ANNA UNIVERSITY · CHENNAI</div>
@@ -604,42 +610,60 @@ function CampusDashboard() {
             <>
               <section className="overview-hero">
                 <div className="hero-copy">
-                  <span className="hero-kicker"><span className="hero-live-dot" /> CAMPUS OPERATIONS · LIVE OVERVIEW</span>
-                  <h2>Good day, campus team.</h2>
-                  <p>Your campus at a glance. Track work, resources and student services from one workspace.</p>
+                  <span className="hero-kicker">UNIVERSITY</span>
+                  <h2>Madras Institute of Technology (MIT) Campus</h2>
+                  <p>
+                    Established in 1949, MIT is a constituent campus of Anna University,
+                    bringing together engineering, technology, research and student life.
+                  </p>
+                  <p className="hero-description">
+                    Explore campus services, discover locations and stay connected with
+                    the MIT community.
+                  </p>
                   <div className="hero-actions">
-                    <button className="button hero-primary" onClick={() => { setPage("Tasks"); setShowTaskForm(true); }}>
-                      <span>＋</span> Create a task
+                    <button className="button hero-primary" onClick={() => setPage("Students")}>
+                      Explore campus <span>→</span>
                     </button>
-                    <button className="button hero-secondary" onClick={() => setPage("Resources")}>Explore inventory <span>↗</span></button>
+                    <a className="button hero-secondary" href="https://mitindia.edu/" target="_blank" rel="noreferrer">
+                      Official MIT website <span>↗</span>
+                    </a>
+                  </div>
+                  <div className="hero-highlights">
+                    <div><strong>1949</strong><span>Year established</span></div>
+                    <div><strong>Anna University</strong><span>Constituent campus</span></div>
+                    <div><strong>Chromepet</strong><span>Chennai, Tamil Nadu</span></div>
                   </div>
                 </div>
-                <div className="hero-orbit" aria-hidden="true">
-                  <div className="orbit-ring orbit-ring-outer" />
-                  <div className="orbit-ring orbit-ring-inner" />
-                  <div className="orbit-core">M</div>
-                  <span className="orbit-chip orbit-chip-top">⌂ <b>{locations.length}</b> locations</span>
-                  <span className="orbit-chip orbit-chip-bottom">✓ <b>{openTasks.length}</b> open tasks</span>
-                </div>
-                <div className="hero-footer">
-                  <span>⌖ &nbsp; MIT Campus, Chromepet</span>
-                  <span><i /> {apiStatus === "Connected" ? "All systems operational" : "Backend connection needed"}</span>
+                <div className="hero-artwork">
+                  <CampusGateArtwork />
+                  <div className="hero-image-caption">
+                    <span className="caption-pin">⌖</span>
+                    <span><strong>MIT Campus</strong><small>Chromepet · Chennai</small></span>
+                    <button onClick={() => setPage("Navigation")} aria-label="Explore campus locations">↗</button>
+                  </div>
                 </div>
               </section>
-              <div className="data-source-banner">
-                <strong>{apiStatus === "Connected" ? "Local backend connected" : "Backend unavailable"}</strong>
-                <span>
-                  {apiStatus === "Connected"
-                    ? "Inventory, student and queue records are illustrative demo data, not MIT operational data."
-                    : "Live inventory, student and queue data are unavailable. Start the C backend to load demonstration records."}
-                </span>
-              </div>
-              <div className="metric-grid">
-                <Metric label="Registered students" value={students.length} detail={`${departments.length} academic departments`} icon="♙" />
-                <Metric label="Campus locations" value={locations.length} detail={`${edges.length} connected walking links`} icon="⌖" />
-                <Metric label="Available units" value={`${available}/${total}`} detail="Across all resource types" icon="✓" />
-                <Metric label="Priority work" value={openTasks.length} detail={`${lowStockResources.length} stock alerts`} icon="!" />
-              </div>
+              <section className="announcement-strip">
+                <div className="announcement-label"><span>✦</span> CAMPUS UPDATES</div>
+                <p>Explore student services, campus locations and shared learning resources.</p>
+                <button onClick={() => setPage("Student Queue")}>Student services <span>→</span></button>
+              </section>
+              <section className="institution-stats" aria-label="Campus overview statistics">
+                {[
+                  ["Students", students.length, "♙", "Students"],
+                  ["Resources", resources.length, "▤", "Resources"],
+                  ["Campus locations", locations.length, "⌖", "Navigation"],
+                  ["Waiting requests", queue.length, "⇄", "Student Queue"],
+                  ["Open tasks", openTasks.length, "✓", "Tasks"],
+                  ["Available units", total ? `${Math.round(available / total * 100)}%` : "—", "↗", "Resources"],
+                ].map(([label, value, icon, target]) => (
+                  <button className="institution-stat" key={label} onClick={() => setPage(target)}>
+                    <span className="stat-icon">{icon}</span>
+                    <strong>{value}</strong>
+                    <span>{label}</span>
+                  </button>
+                ))}
+              </section>
               <div className="section-grid operations-grid">
                 <section className="panel upcoming-panel">
                   <div className="panel-header">
@@ -1195,6 +1219,77 @@ function Metric({ label, value, detail, icon }) {
       <div className="metric-value">{value}</div>
       <div className="metric-detail">{detail}</div>
     </div>
+  );
+}
+
+function CampusGateArtwork() {
+  return (
+    <svg
+      className="campus-gate-art"
+      viewBox="0 0 900 560"
+      role="img"
+      aria-label="Illustration of the entrance to a green university campus"
+      preserveAspectRatio="xMidYMid slice"
+    >
+      <defs>
+        <linearGradient id="campus-sky" x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="#c5e1ec" />
+          <stop offset="1" stopColor="#f4ead7" />
+        </linearGradient>
+        <linearGradient id="campus-road" x1="0" x2="0.9" y1="0" y2="1">
+          <stop offset="0" stopColor="#ddd4c3" />
+          <stop offset="1" stopColor="#a9a696" />
+        </linearGradient>
+        <linearGradient id="campus-pillar" x1="0" x2="1">
+          <stop offset="0" stopColor="#e9e5d9" />
+          <stop offset=".5" stopColor="#fffdf5" />
+          <stop offset="1" stopColor="#c8c3b5" />
+        </linearGradient>
+      </defs>
+      <rect width="900" height="560" fill="url(#campus-sky)" />
+      <circle cx="727" cy="96" r="44" fill="#f3d9a1" opacity=".77" />
+      <path d="M0 308Q205 271 408 310T900 290V560H0Z" fill="#66865e" />
+      <path d="M0 365Q173 318 366 359T900 336V560H0Z" fill="#87966b" />
+      <g fill="#496d53">
+        <path d="M40 339V159h15v180zm-37-23 45-151 45 151z" />
+        <path d="M92 356V199h13v157zm-32-26 39-133 40 133z" />
+        <path d="M769 338V155h16v183zm-39-25 47-160 48 160z" />
+        <path d="M836 365V205h14v160zm-31-28 39-126 39 126z" />
+      </g>
+      <g fill="#73916a">
+        <circle cx="88" cy="289" r="55" /><circle cx="139" cy="316" r="47" />
+        <circle cx="784" cy="292" r="58" /><circle cx="835" cy="321" r="47" />
+        <circle cx="719" cy="314" r="42" /><circle cx="192" cy="332" r="38" />
+      </g>
+      <g fill="#c6bda8" stroke="#958d7b" strokeWidth="4">
+        <path d="M305 323V222h33v101zm13-104v-15h8v15zm22 104V206h32v117zm8-117v-17h11v17z" />
+        <path d="M412 326V188h168v138z" />
+      </g>
+      <g fill="#eee7d7">
+        <path d="M404 190 496 128l94 62z" />
+        <path d="M438 220h18v48h-18zm38 0h18v48h-18zm38 0h18v48h-18z" />
+      </g>
+      <path d="M0 355h900v27H0z" fill="#6d3936" />
+      <path d="M0 350h900v11H0z" fill="#ba7460" />
+      <text x="450" y="346" textAnchor="middle" fill="#fff8eb" fontSize="18" fontFamily="Georgia, serif" letterSpacing="3">
+        MADRAS INSTITUTE OF TECHNOLOGY
+      </text>
+      <g fill="url(#campus-pillar)" stroke="#a9a394" strokeWidth="2">
+        <path d="M93 340h64v220H93zm-9-11h82v17H84zm10-11h62v11H94z" />
+        <path d="M743 340h64v220h-64zm-9-11h82v17h-82zm10-11h62v11h-62z" />
+      </g>
+      <g stroke="#554c42" strokeWidth="8">
+        <path d="M163 374v133m27-133v133m27-133v133m27-133v133m27-133v133m27-133v133" />
+        <path d="M567 374v133m27-133v133m27-133v133m27-133v133m27-133v133m27-133v133" />
+      </g>
+      <path d="M0 509 294 475h312l294 34v51H0z" fill="url(#campus-road)" />
+      <path d="m390 482-44 78h208l-43-78z" fill="#c4bca9" opacity=".8" />
+      <path d="M0 538q181-45 334-20t566-4v46H0z" fill="#6c7f5a" opacity=".9" />
+      <g fill="#f5f0df" opacity=".8">
+        <circle cx="254" cy="454" r="4" /><circle cx="272" cy="446" r="3" /><circle cx="653" cy="448" r="4" />
+        <circle cx="674" cy="458" r="3" /><circle cx="206" cy="463" r="3" /><circle cx="701" cy="442" r="3" />
+      </g>
+    </svg>
   );
 }
 
