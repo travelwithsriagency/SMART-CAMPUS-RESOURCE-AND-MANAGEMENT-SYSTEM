@@ -64,6 +64,10 @@ NOTES
   service. This map works without the local C backend but requires internet
   access. OpenStreetMap coverage can be incomplete, so verify directions
   on campus.
+- GitHub Pages can serve the site either from the built Actions artifact or
+  from the repository root. If using the legacy main-branch source, run
+  `npm run build:legacy` and commit the generated `dist` folder along with
+  frontend changes so the root-page loader can find the compiled bundle.
 - GET /api/route remains a Dijkstra example over the illustrative graph.
   It is not the Navigation page's walking route and its distances are not
   real campus walking distances.

@@ -18,6 +18,8 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
+    outputs:
+      pages_source: ${{ steps.pages-source-check.outputs.build_type }}
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
@@ -25,7 +27,8 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
-      - name: Verify GitHub Pages uses Actions
+      - name: Check GitHub Pages source
+        id: pages-source-check
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -34,8 +37,13 @@ jobs:
             --header "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages")"
           build_type="$(jq -r '.build_type // "unset"' <<< "$config")"
-          if [[ "$build_type" != "workflow" ]]; then
-            echo "::error title=GitHub Pages source mismatch::Set Settings > Pages > Build and deployment > Source to GitHub Actions, then rerun this workflow. Current source: ${build_type}."
+          echo "build_type=${build_type}" >> "$GITHUB_OUTPUT"
+          if [[ "$build_type" == "workflow" ]]; then
+            echo "GitHub Pages will deploy the built artifact."
+          elif [[ "$build_type" == "legacy" ]]; then
+            echo "::warning title=Legacy GitHub Pages source::The branch-published HTML bundle will serve the site. Switch Pages to GitHub Actions to deploy the Actions artifact."
+          else
+            echo "::error title=GitHub Pages is not enabled::Enable Pages for this repository before deploying."
             exit 1
           fi
 
@@ -57,6 +65,7 @@ jobs:
           path: dist
 
   deploy:
+    if: needs.build.outputs.pages_source == 'workflow'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

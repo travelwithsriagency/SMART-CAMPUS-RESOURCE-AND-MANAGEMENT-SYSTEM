@@ -14,4 +14,13 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    manifest: true,
+    rollupOptions: {
+      input: {
+        app: "main.jsx",
+        index: "index.html",
+      },
+    },
+  },
 });
