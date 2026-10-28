@@ -131,6 +131,16 @@ static int startsWithIgnoreCase(const char *s, const char *prefix) {
     return 1;
 }
 
+static int equalsIgnoreCase(const char *left, const char *right) {
+    while (*left && *right) {
+        if (tolower((unsigned char)*left) != tolower((unsigned char)*right))
+            return 0;
+        left++;
+        right++;
+    }
+    return *left == '\0' && *right == '\0';
+}
+
 static void outChar(Out *o, char c) {
     if (o->len < OUT_SIZE - 1) {
         o->data[o->len++] = c;
@@ -253,6 +263,30 @@ static int queryInt(const char *query, const char *key, int *value) {
     return 0;
 }
 
+static int
+queryValue(const char *query, const char *key, char *value, size_t capacity) {
+    size_t keyLength = strlen(key);
+    const char *current = query;
+    while (*current) {
+        if (strncmp(current, key, keyLength) == 0 &&
+            current[keyLength] == '=') {
+            const char *start = current + keyLength + 1;
+            const char *end = strchr(start, '&');
+            size_t length = end ? (size_t)(end - start) : strlen(start);
+            if (length >= capacity)
+                length = capacity - 1;
+            memcpy(value, start, length);
+            value[length] = '\0';
+            return 1;
+        }
+        const char *ampersand = strchr(current, '&');
+        if (!ampersand)
+            break;
+        current = ampersand + 1;
+    }
+    return 0;
+}
+
 /* ---------- HTTP request reading and response writing ---------- */
 
 static int findContentLength(const char *raw) {
@@ -261,8 +295,13 @@ static int findContentLength(const char *raw) {
         const char *line = p + 2;
         if (line[0] == '\0' || (line[0] == '\r' && line[1] == '\n'))
             break; /* end of headers */
-        if (startsWithIgnoreCase(line, "content-length:"))
-            return atoi(line + 15);
+        if (startsWithIgnoreCase(line, "content-length:")) {
+            char *end;
+            long length = strtol(line + 15, &end, 10);
+            if (end == line + 15 || length < 0 || length >= REQ_SIZE)
+                return -1;
+            return (int)length;
+        }
         p = strstr(line, "\r\n");
     }
     return 0;
@@ -289,6 +328,8 @@ static int readRequest(sock_t s, Request *req) {
             break;
     }
     if (headerEnd < 0)
+        return 0;
+    if (contentLength < 0)
         return 0;
 
     char target[512] = "";
@@ -355,20 +396,20 @@ static void sendAll(sock_t s, const char *data, size_t len) {
 static void
 sendResponse(sock_t s, int status, const char *body, size_t bodyLen) {
     char header[512];
-    int hl =
-        snprintf(header,
-                 sizeof header,
-                 "HTTP/1.1 %d %s\r\n"
-                 "Content-Type: application/json; charset=utf-8\r\n"
-                 "Content-Length: %lu\r\n"
-                 "Access-Control-Allow-Origin: *\r\n"
-                 "Access-Control-Allow-Methods: GET, POST, DELETE, OPTIONS\r\n"
-                 "Access-Control-Allow-Headers: Content-Type\r\n"
-                 "Connection: close\r\n"
-                 "\r\n",
-                 status,
-                 statusText(status),
-                 (unsigned long)bodyLen);
+    int hl = snprintf(
+        header,
+        sizeof header,
+        "HTTP/1.1 %d %s\r\n"
+        "Content-Type: application/json; charset=utf-8\r\n"
+        "Content-Length: %lu\r\n"
+        "Access-Control-Allow-Origin: *\r\n"
+        "Access-Control-Allow-Methods: GET, POST, PUT, DELETE, OPTIONS\r\n"
+        "Access-Control-Allow-Headers: Content-Type\r\n"
+        "Connection: close\r\n"
+        "\r\n",
+        status,
+        statusText(status),
+        (unsigned long)bodyLen);
     sendAll(s, header, (size_t)hl);
     sendAll(s, body, bodyLen);
 }
@@ -443,12 +484,21 @@ static int handleAddResource(const char *body, Out *o) {
     }
     jsonString(body, "category", category, sizeof category);
     jsonString(body, "location", location, sizeof location);
-    if (!jsonInt(body, "total", &total) || total < 1)
-        total = 1;
+    if (!jsonInt(body, "total", &total) || total < 1 || total > 10000) {
+        writeError(o, "Total must be an integer between 1 and 10000");
+        return 400;
+    }
     if (category[0] == '\0')
         copyStr(category, "Equipment", sizeof category);
     if (location[0] == '\0')
         copyStr(location, "Not assigned", sizeof location);
+
+    for (int i = 0; i < resourceCount; i++) {
+        if (equalsIgnoreCase(resources[i].name, name)) {
+            writeError(o, "A resource with this name already exists");
+            return 409;
+        }
+    }
 
     if (resourceCount >= MAX_RESOURCES) {
         writeError(o, "Resource list is full");
@@ -464,6 +514,49 @@ static int handleAddResource(const char *body, Out *o) {
     r->available = total;
     writeResource(o, r);
     return 201;
+}
+
+static int handleUpdateResource(int id, const char *body, Out *o) {
+    int idx = findResource(id);
+    if (idx < 0) {
+        writeError(o, "Resource not found");
+        return 404;
+    }
+
+    char name[NAME_LEN] = "";
+    char category[NAME_LEN] = "";
+    char location[NAME_LEN] = "";
+    int total = 0;
+    if (!jsonString(body, "name", name, sizeof name) || name[0] == '\0' ||
+        !jsonString(body, "category", category, sizeof category) ||
+        category[0] == '\0' ||
+        !jsonString(body, "location", location, sizeof location) ||
+        location[0] == '\0' || !jsonInt(body, "total", &total) || total < 1 ||
+        total > 10000) {
+        writeError(
+            o, "Name, category, location, and a positive total are required");
+        return 400;
+    }
+    if (total < resources[idx].total - resources[idx].available) {
+        writeError(o, "Total cannot be lower than the number of units in use");
+        return 400;
+    }
+    for (int i = 0; i < resourceCount; i++) {
+        if (i != idx && equalsIgnoreCase(resources[i].name, name)) {
+            writeError(o, "A resource with this name already exists");
+            return 409;
+        }
+    }
+
+    Resource *resource = &resources[idx];
+    int unitsInUse = resource->total - resource->available;
+    copyStr(resource->name, name, NAME_LEN);
+    copyStr(resource->category, category, NAME_LEN);
+    copyStr(resource->location, location, NAME_LEN);
+    resource->total = total;
+    resource->available = total - unitsInUse;
+    writeResource(o, resource);
+    return 200;
 }
 
 /* Mirrors the frontend's "Mark used" / "Restock" button */
@@ -656,6 +749,77 @@ static int handleRoutePlan(const char *query, Out *o) {
     return 200;
 }
 
+static int handleTraversal(const char *query, Out *o) {
+    char algorithm[16] = "";
+    int start = -1;
+    if (!queryInt(query, "from", &start) || start < 0 ||
+        start >= MAX_LOCATIONS ||
+        !queryValue(query, "algorithm", algorithm, sizeof algorithm) ||
+        (!equalsIgnoreCase(algorithm, "bfs") &&
+         !equalsIgnoreCase(algorithm, "dfs"))) {
+        writeError(o,
+                   "Provide algorithm=bfs or dfs and a valid from location id");
+        return 400;
+    }
+
+    int order[MAX_LOCATIONS];
+    int count = 0;
+    int visited[MAX_LOCATIONS] = {0};
+    if (equalsIgnoreCase(algorithm, "bfs")) {
+        int queue[MAX_LOCATIONS];
+        int front = 0;
+        int rear = 0;
+        queue[rear++] = start;
+        visited[start] = 1;
+        while (front < rear) {
+            int current = queue[front++];
+            order[count++] = current;
+            for (int next = 0; next < MAX_LOCATIONS; next++) {
+                if (graph[current][next] > 0 && !visited[next]) {
+                    visited[next] = 1;
+                    queue[rear++] = next;
+                }
+            }
+        }
+    } else {
+        int stack[MAX_LOCATIONS * MAX_LOCATIONS + 1];
+        int top = 0;
+        stack[top++] = start;
+        while (top > 0) {
+            int current = stack[--top];
+            if (visited[current])
+                continue;
+            visited[current] = 1;
+            order[count++] = current;
+            for (int next = MAX_LOCATIONS - 1; next >= 0; next--) {
+                if (graph[current][next] > 0 && !visited[next]) {
+                    stack[top++] = next;
+                }
+            }
+        }
+    }
+
+    outFmt(o,
+           "{\"algorithm\":\"%s\",\"start\":%d,\"order\":[",
+           equalsIgnoreCase(algorithm, "bfs") ? "bfs" : "dfs",
+           start);
+    for (int i = 0; i < count; i++) {
+        if (i)
+            outChar(o, ',');
+        outFmt(o, "%d", order[i]);
+    }
+    outStr(o, "],\"names\":[");
+    for (int i = 0; i < count; i++) {
+        if (i)
+            outChar(o, ',');
+        outJsonString(o, locationNames[order[i]]);
+    }
+    outStr(o,
+           "],\"representation\":\"adjacency matrix\","
+           "\"complexity\":{\"time\":\"O(V^2)\",\"space\":\"O(V)\"}}");
+    return 200;
+}
+
 /* ---------- Health and routing ---------- */
 
 static int handleHealth(Out *o) {
@@ -677,6 +841,8 @@ static int dispatch(const Request *req, Out *o) {
         return handleLocations(o);
     if (strcmp(p, "/api/route") == 0 && strcmp(m, "GET") == 0)
         return handleRoutePlan(req->query, o);
+    if (strcmp(p, "/api/traverse") == 0 && strcmp(m, "GET") == 0)
+        return handleTraversal(req->query, o);
 
     if (strcmp(p, "/api/resources") == 0) {
         if (strcmp(m, "GET") == 0)
@@ -696,6 +862,8 @@ static int dispatch(const Request *req, Out *o) {
         }
         if (*end == '\0' && strcmp(m, "DELETE") == 0)
             return handleDeleteResource((int)id, o);
+        if (*end == '\0' && strcmp(m, "PUT") == 0)
+            return handleUpdateResource((int)id, req->body, o);
         if (strcmp(end, "/use") == 0 && strcmp(m, "POST") == 0)
             return handleUseResource((int)id, o);
         writeError(o, "Not found");
@@ -748,13 +916,26 @@ static void seedData(void) {
     addSeedResource("Seminar Hall", "Classroom", "Main Block", 3, 2);
     addSeedResource("Library Study Room", "Study Space", "Library", 8, 6);
     addSeedResource("Electronics Lab", "Laboratory", "Department Block", 2, 1);
+    addSeedResource("Lecture Hall Display", "Equipment", "Lecture Hall B", 8, 6);
+    addSeedResource("Desktop Workstation", "IT & Network", "Computer Lab", 30, 24);
+    addSeedResource("Microscope Set", "Laboratory", "Biology Lab", 10, 7);
+    addSeedResource("Smart Classroom", "Classroom", "Academic Block", 6, 5);
+    addSeedResource("First Aid Kit", "Safety", "Main Block", 12, 2);
+    addSeedResource("Whiteboard Kit", "Equipment", "Lecture Hall A", 18, 14);
+    addSeedResource("Camera Kit", "Equipment", "Media Lab", 6, 4);
+    addSeedResource("Water Dispenser", "Facilities", "Student Centre", 9, 7);
+    addSeedResource("Study Desk", "Furniture", "Library", 40, 32);
+    addSeedResource("Network Switch", "IT & Network", "Network Room", 5, 1);
 
     const char *students[][2] = {
         {"Student 001", "Library Help Desk"},
         {"Student 002", "Administrative Office"},
         {"Student 003", "Library Help Desk"},
+        {"Student 004", "Laboratory Support"},
+        {"Student 005", "Student Services"},
+        {"Student 006", "Administrative Office"},
     };
-    for (int i = 0; i < 3; i++) {
+    for (int i = 0; i < 6; i++) {
         Student *s = &studentQueue[queueCount];
         s->id = nextStudentId++;
         copyStr(s->name, students[i][0], NAME_LEN);

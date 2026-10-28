@@ -15,6 +15,41 @@ const initialEdges = [
   [2, 4, 4], [3, 4, 2], [3, 5, 5], [4, 5, 3],
 ];
 
+const taskStatuses = ["To do", "In progress", "Done"];
+const taskPriorities = ["High", "Medium", "Low"];
+
+function dateOffset(days) {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, "0"),
+    String(date.getDate()).padStart(2, "0"),
+  ].join("-");
+}
+
+const initialTasks = [
+  { id: "task-1", title: "Inspect lecture hall projectors", description: "Check focus, HDMI inputs and remote batteries before the next lecture block.", area: "Lecture Hall A", priority: "High", status: "In progress", dueDate: dateOffset(0), owner: "Facilities" },
+  { id: "task-2", title: "Prepare the electronics lab", description: "Verify bench power supplies and return shared test equipment to storage.", area: "Department Block", priority: "High", status: "To do", dueDate: dateOffset(1), owner: "Lab team" },
+  { id: "task-3", title: "Refresh library study rooms", description: "Review room readiness and update availability after the morning checks.", area: "Library", priority: "Medium", status: "To do", dueDate: dateOffset(2), owner: "Library team" },
+  { id: "task-4", title: "Restock workshop safety kits", description: "Count first-aid and safety supplies in the student workshop.", area: "Workshop", priority: "Medium", status: "In progress", dueDate: dateOffset(3), owner: "Safety team" },
+  { id: "task-5", title: "Review seminar hall setup", description: "Confirm seating layout, display connection and room signage.", area: "Main Block", priority: "Low", status: "Done", dueDate: dateOffset(-1), owner: "Events team" },
+  { id: "task-6", title: "Update campus equipment register", description: "Reconcile AV equipment counts with the latest inventory check.", area: "Campus-wide", priority: "Low", status: "To do", dueDate: dateOffset(5), owner: "Operations" },
+];
+
+function loadTasks() {
+  try {
+    const savedTasks = window.localStorage.getItem("smart-campus-tasks");
+    if (!savedTasks) return initialTasks;
+    const parsedTasks = JSON.parse(savedTasks);
+    if (Array.isArray(parsedTasks)) return parsedTasks;
+    throw new Error("Saved campus tasks are not in the expected format.");
+  } catch (error) {
+    console.error("Could not load saved campus tasks.", error);
+    return initialTasks;
+  }
+}
+
 async function apiRequest(path, options = {}) {
   let response;
   try {
@@ -45,9 +80,11 @@ const navGroups = [
     title: "CAMPUS",
     items: [
       ["Overview", "▦"],
+      ["Tasks", "✓"],
       ["Resources", "▤"],
       ["Navigation", "⌖"],
       ["Student Queue", "⇄"],
+      ["Reports", "▥"],
     ],
   },
   {
@@ -60,42 +97,99 @@ const navGroups = [
 ];
 
 export default function App() {
+  return <CampusDashboard />;
+}
+
+function CampusDashboard() {
   const [page, setPage] = useState("Overview");
   const [resources, setResources] = useState([]);
+  const [tasks, setTasks] = useState(loadTasks);
   const [queue, setQueue] = useState([]);
+  const [queueHistory, setQueueHistory] = useState([]);
   const [locations, setLocations] = useState(initialLocations);
   const [edges, setEdges] = useState(initialEdges);
   const [search, setSearch] = useState("");
+  const [resourceCategoryFilter, setResourceCategoryFilter] = useState("All categories");
+  const [queueSearch, setQueueSearch] = useState("");
+  const [activitySearch, setActivitySearch] = useState("");
   const [notice, setNotice] = useState("");
   const [apiStatus, setApiStatus] = useState("Connecting…");
   const [from, setFrom] = useState(0);
   const [to, setTo] = useState(5);
   const [route, setRoute] = useState(null);
+  const [algorithm, setAlgorithm] = useState("bfs");
+  const [algorithmStart, setAlgorithmStart] = useState(0);
+  const [traversal, setTraversal] = useState(null);
   const [newStudent, setNewStudent] = useState("");
   const [newService, setNewService] = useState("Library Help Desk");
   const [newResource, setNewResource] = useState("");
   const [resourceCategory, setResourceCategory] = useState("Equipment");
+  const [resourceLocation, setResourceLocation] = useState("");
+  const [resourceTotal, setResourceTotal] = useState(1);
+  const [editingResourceId, setEditingResourceId] = useState(null);
   const [showResourceForm, setShowResourceForm] = useState(false);
+  const [showTaskForm, setShowTaskForm] = useState(false);
+  const [taskSearch, setTaskSearch] = useState("");
+  const [newTaskTitle, setNewTaskTitle] = useState("");
+  const [newTaskDescription, setNewTaskDescription] = useState("");
+  const [newTaskArea, setNewTaskArea] = useState("");
+  const [newTaskPriority, setNewTaskPriority] = useState("Medium");
+  const [newTaskDueDate, setNewTaskDueDate] = useState(dateOffset(2));
+  const [newTaskOwner, setNewTaskOwner] = useState("");
   const [logs, setLogs] = useState([
     "Campus dashboard initialized",
   ]);
 
   const available = resources.reduce((sum, item) => sum + item.available, 0);
   const total = resources.reduce((sum, item) => sum + item.total, 0);
+  const openTasks = tasks.filter((task) => task.status !== "Done");
+  const completedTasks = tasks.filter((task) => task.status === "Done");
+  const activeTaskCount = tasks.filter((task) => task.status === "In progress").length;
+  const categories = ["All categories", ...new Set(resources.map((item) => item.category))];
 
   const filteredResources = resources.filter((item) =>
     `${item.name} ${item.category} ${item.location}`
       .toLowerCase()
-      .includes(search.toLowerCase())
+      .includes(search.toLowerCase()) &&
+    (resourceCategoryFilter === "All categories" || item.category === resourceCategoryFilter)
+  );
+  const filteredTasks = tasks.filter((task) =>
+    `${task.title} ${task.description} ${task.area} ${task.owner}`
+      .toLowerCase()
+      .includes(taskSearch.toLowerCase())
+  );
+  const upcomingTasks = [...openTasks].sort((a, b) => a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
+  const categoryTotals = resources.reduce((totals, item) => {
+    totals[item.category] = (totals[item.category] || 0) + item.total;
+    return totals;
+  }, {});
+  const maxCategoryTotal = Math.max(1, ...Object.values(categoryTotals));
+  const filteredQueue = queue.filter((student) =>
+    `${student.name} ${student.service}`.toLowerCase().includes(queueSearch.toLowerCase())
+  );
+  const lowStockResources = resources.filter((item) =>
+    item.total > 0 && item.available / item.total <= 0.2
+  );
+  const filteredLogs = logs.filter((entry) =>
+    entry.toLowerCase().includes(activitySearch.toLowerCase())
   );
 
   function logActivity(message) {
     setLogs((old) => [
-      `${new Date().toLocaleTimeString()} — ${message}`,
+      `${new Date().toLocaleString()} — ${message}`,
       ...old,
     ].slice(0, 12));
     setNotice(message);
   }
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("smart-campus-tasks", JSON.stringify(tasks));
+    } catch (error) {
+      console.error("Could not save campus tasks.", error);
+      setNotice("Tasks changed, but this browser could not save them locally.");
+    }
+  }, [tasks]);
 
   async function checkBackend() {
     setApiStatus("Connecting…");
@@ -170,32 +264,128 @@ export default function App() {
     try {
       const result = await apiRequest("/api/queue/serve", { method: "POST" });
       setQueue((old) => old.filter((student) => student.id !== result.served.id));
+      setQueueHistory((old) => [
+        { ...result.served, servedAt: new Date().toLocaleString() },
+        ...old,
+      ].slice(0, 50));
       logActivity(`${result.served.name} served at ${result.served.service}`);
     } catch (error) {
       setNotice(error.message);
     }
   }
 
-  async function addResource(event) {
+  function openResourceForm(resource = null) {
+    setEditingResourceId(resource?.id ?? null);
+    setNewResource(resource?.name ?? "");
+    setResourceCategory(resource?.category ?? "Equipment");
+    setResourceLocation(resource?.location ?? "");
+    setResourceTotal(resource?.total ?? 1);
+    setShowResourceForm(true);
+  }
+
+  async function saveResource(event) {
     event.preventDefault();
     if (!newResource.trim()) return;
     try {
-      const entry = await apiRequest("/api/resources", {
-        method: "POST",
-        body: JSON.stringify({
-          name: newResource.trim(),
-          category: resourceCategory,
-          location: "Not assigned",
-          total: 1,
-        }),
-      });
-      setResources((old) => [...old, entry]);
+      const resourceData = {
+        name: newResource.trim(),
+        category: resourceCategory,
+        location: resourceLocation.trim() || "Not assigned",
+        total: Number(resourceTotal),
+      };
+      const isEditing = editingResourceId !== null;
+      const entry = await apiRequest(
+        isEditing ? `/api/resources/${editingResourceId}` : "/api/resources",
+        {
+          method: isEditing ? "PUT" : "POST",
+          body: JSON.stringify(resourceData),
+        }
+      );
+      if (isEditing) {
+        setResources((old) => old.map((item) => item.id === entry.id ? entry : item));
+      } else {
+        setResources((old) => [...old, entry]);
+      }
       setNewResource("");
+      setResourceLocation("");
+      setResourceTotal(1);
+      setEditingResourceId(null);
       setShowResourceForm(false);
-      logActivity(`Resource added: ${entry.name}`);
+      logActivity(`Resource ${isEditing ? "updated" : "added"}: ${entry.name}`);
     } catch (error) {
       setNotice(error.message);
     }
+  }
+
+  async function deleteResource(resource) {
+    if (!window.confirm(`Delete "${resource.name}" from the inventory?`)) return;
+    try {
+      await apiRequest(`/api/resources/${resource.id}`, { method: "DELETE" });
+      setResources((old) => old.filter((item) => item.id !== resource.id));
+      logActivity(`Resource deleted: ${resource.name}`);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  async function runTraversal(event) {
+    event.preventDefault();
+    try {
+      const result = await apiRequest(
+        `/api/traverse?algorithm=${algorithm}&from=${algorithmStart}`
+      );
+      setTraversal(result);
+      logActivity(`${algorithm.toUpperCase()} traversal run from ${locations[algorithmStart]?.name}`);
+    } catch (error) {
+      setTraversal(null);
+      setNotice(error.message);
+    }
+  }
+
+  function downloadReport() {
+    const rows = [
+      ["Report", "Campus operations"],
+      ["Generated at", new Date().toLocaleString()],
+      ["Data source", apiStatus === "Connected" ? "Local backend (sample seed data)" : "Backend unavailable"],
+      [],
+      ["Campus tasks (browser-local)"],
+      ["Title", "Area", "Priority", "Status", "Due date", "Owner"],
+      ...tasks.map((task) => [
+        task.title, task.area, task.priority, task.status, task.dueDate, task.owner,
+      ]),
+      [],
+      ["Resources"],
+      ["ID", "Name", "Category", "Location", "Available", "Total", "Utilization"],
+      ...resources.map((item) => [
+        item.id,
+        item.name,
+        item.category,
+        item.location,
+        item.available,
+        item.total,
+        item.total ? `${Math.round((item.total - item.available) / item.total * 100)}%` : "0%",
+      ]),
+      [],
+      ["Current queue"],
+      ["Position", "Student", "Service"],
+      ...queue.map((student, index) => [index + 1, student.name, student.service]),
+      [],
+      ["Recently served in this browser session"],
+      ["Student", "Service", "Served at"],
+      ...queueHistory.map((student) => [student.name, student.service, student.servedAt]),
+    ];
+    const csv = rows.map((row) => row.map((cell) => {
+      const value = String(cell ?? "");
+      const safeValue = /^[=+\-@]/.test(value) ? `'${value}` : value;
+      return `"${safeValue.replaceAll('"', '""')}"`;
+    }).join(",")).join("\r\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "smart-campus-report.csv";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    logActivity("CSV report exported");
   }
 
   async function toggleAvailability(id) {
@@ -208,14 +398,53 @@ export default function App() {
     }
   }
 
+  function addTask(event) {
+    event.preventDefault();
+    if (!newTaskTitle.trim()) return;
+    const task = {
+      id: `task-${Date.now()}`,
+      title: newTaskTitle.trim(),
+      description: newTaskDescription.trim() || "New campus operations task.",
+      area: newTaskArea.trim() || "Campus-wide",
+      priority: newTaskPriority,
+      status: "To do",
+      dueDate: newTaskDueDate,
+      owner: newTaskOwner.trim() || "Unassigned",
+    };
+    setTasks((old) => [task, ...old]);
+    setNewTaskTitle("");
+    setNewTaskDescription("");
+    setNewTaskArea("");
+    setNewTaskOwner("");
+    setNewTaskPriority("Medium");
+    setNewTaskDueDate(dateOffset(2));
+    setShowTaskForm(false);
+    logActivity(`Task created: ${task.title}`);
+  }
+
+  function advanceTask(task) {
+    const nextStatus = task.status === "Done"
+      ? "To do"
+      : taskStatuses[taskStatuses.indexOf(task.status) + 1];
+    setTasks((old) => old.map((item) =>
+      item.id === task.id ? { ...item, status: nextStatus } : item
+    ));
+    logActivity(`Task ${nextStatus === "Done" ? "completed" : "moved to " + nextStatus.toLowerCase()}: ${task.title}`);
+  }
+
+  function deleteTask(task) {
+    setTasks((old) => old.filter((item) => item.id !== task.id));
+    logActivity(`Task removed: ${task.title}`);
+  }
+
   return (
     <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
           <div className="brand-mark">M</div>
           <div>
-            <div className="brand-name">MIT CAMPUS</div>
-            <div className="brand-caption">OPERATIONS PORTAL</div>
+            <div className="brand-name">MADRAS INSTITUTE OF TECHNOLOGY</div>
+            <div className="brand-caption">ANNA UNIVERSITY · CHROMEPET</div>
           </div>
         </div>
 
@@ -237,6 +466,9 @@ export default function App() {
                 <span>{label}</span>
                 {label === "Student Queue" && (
                   <span className="nav-count">{queue.length}</span>
+                )}
+                {label === "Tasks" && (
+                  <span className="nav-count">{openTasks.length}</span>
                 )}
               </button>
             ))}
@@ -267,12 +499,12 @@ export default function App() {
             <button className="button button-secondary button-small" onClick={checkBackend}>
               ↻ Check backend
             </button>
-            <div className="avatar">MC</div>
+            <div className="avatar">M</div>
           </div>
         </header>
 
         <section className="page-body">
-          <div className="page-heading">
+          <div className={`page-heading ${page === "Overview" ? "overview-heading" : ""}`}>
             <div>
               <div className="eyebrow">MIT · ANNA UNIVERSITY · CHENNAI</div>
               <h1>{page === "Overview" ? "Campus overview" : page}</h1>
@@ -299,12 +531,102 @@ export default function App() {
 
           {page === "Overview" && (
             <>
+              <section className="overview-hero">
+                <div className="hero-copy">
+                  <span className="hero-kicker"><span className="hero-live-dot" /> CAMPUS OPERATIONS · LIVE OVERVIEW</span>
+                  <h2>Good day, campus team.</h2>
+                  <p>Your campus at a glance. Track work, resources and student services from one workspace.</p>
+                  <div className="hero-actions">
+                    <button className="button hero-primary" onClick={() => { setPage("Tasks"); setShowTaskForm(true); }}>
+                      <span>＋</span> Create a task
+                    </button>
+                    <button className="button hero-secondary" onClick={() => setPage("Resources")}>Explore inventory <span>↗</span></button>
+                  </div>
+                </div>
+                <div className="hero-orbit" aria-hidden="true">
+                  <div className="orbit-ring orbit-ring-outer" />
+                  <div className="orbit-ring orbit-ring-inner" />
+                  <div className="orbit-core">M</div>
+                  <span className="orbit-chip orbit-chip-top">⌂ <b>6</b> locations</span>
+                  <span className="orbit-chip orbit-chip-bottom">✓ <b>{openTasks.length}</b> open tasks</span>
+                </div>
+                <div className="hero-footer">
+                  <span>⌖ &nbsp; MIT Campus, Chromepet</span>
+                  <span><i /> {apiStatus === "Connected" ? "All systems operational" : "Backend connection needed"}</span>
+                </div>
+              </section>
+              <div className="data-source-banner">
+                <strong>{apiStatus === "Connected" ? "Local backend connected" : "Backend unavailable"}</strong>
+                <span>
+                  {apiStatus === "Connected"
+                    ? "Starter inventory and queue records are sample data, not MIT operational data."
+                    : "Live inventory and queue data are unavailable. Start the C backend to load its demonstration records."}
+                </span>
+              </div>
               <div className="metric-grid">
                 <Metric label="Registered resources" value={resources.length} detail="Tracked records" icon="▤" />
                 <Metric label="Available units" value={`${available}/${total}`} detail="Across all resource types" icon="✓" />
                 <Metric label="Waiting students" value={queue.length} detail="Active service queue" icon="⇄" />
-                <Metric label="Campus locations" value={locations.length} detail="Illustrative network nodes" icon="⌖" />
+                <Metric label="Low-stock items" value={lowStockResources.length} detail="At or below 20% available" icon="!" />
               </div>
+              <div className="section-grid operations-grid">
+                <section className="panel upcoming-panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="section-overline">WORKSPACE</span>
+                      <h2>Priority tasks</h2>
+                      <p>{openTasks.length} open · {activeTaskCount} currently in progress</p>
+                    </div>
+                    <button className="text-button" onClick={() => setPage("Tasks")}>View task board ↗</button>
+                  </div>
+                  <div className="upcoming-list">
+                    {upcomingTasks.map((task) => (
+                      <TaskRow key={task.id} task={task} onAdvance={advanceTask} />
+                    ))}
+                    {!upcomingTasks.length && <Empty text="All tasks are complete. Nice work!" />}
+                  </div>
+                </section>
+                <section className="panel inventory-overview-panel">
+                  <div className="panel-header">
+                    <div>
+                      <span className="section-overline">INVENTORY</span>
+                      <h2>Resource mix</h2>
+                      <p>{resources.length} resource types · {total} tracked units</p>
+                    </div>
+                    <button className="text-button" onClick={() => setPage("Resources")}>View inventory ↗</button>
+                  </div>
+                  <div className="category-chart">
+                    {Object.entries(categoryTotals).map(([category, count], index) => (
+                      <div className="category-chart-row" key={category}>
+                        <div className="category-chart-label"><span className={`category-dot category-dot-${index % 5}`} />{category}<strong>{count}</strong></div>
+                        <div className="category-track"><span className={`category-fill category-fill-${index % 5}`} style={{ width: `${count / maxCategoryTotal * 100}%` }} /></div>
+                      </div>
+                    ))}
+                    {!resources.length && <Empty text="Connect to the backend to load inventory." />}
+                  </div>
+                  <div className="inventory-foot"><span>Availability rate</span><strong>{total ? Math.round(available / total * 100) : 0}%</strong></div>
+                </section>
+              </div>
+              {lowStockResources.length > 0 && (
+                <section className="panel alert-panel">
+                  <div className="panel-header">
+                    <div>
+                      <h2>Inventory alerts</h2>
+                      <p>Computed from current backend inventory; threshold is 20% available.</p>
+                    </div>
+                    <button className="text-button" onClick={() => setPage("Resources")}>Review inventory ↗</button>
+                  </div>
+                  <div className="alert-list">
+                    {lowStockResources.map((resource) => (
+                      <div className="alert-row" key={resource.id}>
+                        <span className="alert-severity">LOW STOCK</span>
+                        <strong>{resource.name}</strong>
+                        <span>{resource.available} of {resource.total} available</span>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
 
               <div className="section-grid overview-grid">
                 <section className="panel">
@@ -360,40 +682,151 @@ export default function App() {
                   </div>
                   <button className="text-button" onClick={() => setPage("Resources")}>Manage resources ↗</button>
                 </div>
-                <ResourceTable resources={resources.slice(0, 4)} onToggle={toggleAvailability} />
+                <ResourceTable
+                  resources={resources.slice(0, 4)}
+                  onToggle={toggleAvailability}
+                  onEdit={(resource) => {
+                    openResourceForm(resource);
+                    setPage("Resources");
+                  }}
+                  onDelete={deleteResource}
+                />
               </section>
             </>
           )}
 
-          {page === "Resources" && (
-            <section className="panel">
-              <div className="panel-header">
+          {page === "Tasks" && (
+            <section className="panel task-board-panel">
+              <div className="panel-header task-board-header">
                 <div>
-                  <h2>Resource inventory</h2>
-                  <p>Review, search and update demonstration records.</p>
+                  <span className="section-overline">CAMPUS WORKSPACE</span>
+                  <h2>Operations task board</h2>
+                  <p>Coordinate campus work and keep priorities moving. Tasks are saved in this browser.</p>
                 </div>
-                <button className="button button-primary" onClick={() => setShowResourceForm(!showResourceForm)}>
-                  + Add resource
+                <button className="button button-primary" onClick={() => setShowTaskForm((visible) => !visible)}>
+                  {showTaskForm ? "Cancel" : "＋ New task"}
                 </button>
               </div>
+              <div className="task-summary">
+                <div><span className="task-summary-icon task-icon-open">◷</span><span>Open tasks<strong>{openTasks.length}</strong></span></div>
+                <div><span className="task-summary-icon task-icon-progress">↗</span><span>In progress<strong>{activeTaskCount}</strong></span></div>
+                <div><span className="task-summary-icon task-icon-done">✓</span><span>Completed<strong>{completedTasks.length}</strong></span></div>
+              </div>
+              {showTaskForm && (
+                <form className="task-form" onSubmit={addTask}>
+                  <label>Task title<input required maxLength={100} value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} placeholder="e.g. Inspect classroom AV equipment" /></label>
+                  <label>Details<input maxLength={160} value={newTaskDescription} onChange={(event) => setNewTaskDescription(event.target.value)} placeholder="What needs to be done?" /></label>
+                  <label>Campus area<input maxLength={63} value={newTaskArea} onChange={(event) => setNewTaskArea(event.target.value)} placeholder="Building or location" /></label>
+                  <label>Owner<input maxLength={63} value={newTaskOwner} onChange={(event) => setNewTaskOwner(event.target.value)} placeholder="Team or person" /></label>
+                  <label>Priority<select value={newTaskPriority} onChange={(event) => setNewTaskPriority(event.target.value)}>{taskPriorities.map((priority) => <option key={priority}>{priority}</option>)}</select></label>
+                  <label>Due date<input type="date" value={newTaskDueDate} onChange={(event) => setNewTaskDueDate(event.target.value)} required /></label>
+                  <button className="button button-primary" type="submit">Add to task board</button>
+                </form>
+              )}
+              <div className="search-box task-search">
+                <span>⌕</span>
+                <input value={taskSearch} onChange={(event) => setTaskSearch(event.target.value)} placeholder="Search tasks, areas or owners..." aria-label="Search tasks" />
+              </div>
+              <div className="task-columns">
+                {taskStatuses.map((status) => {
+                  const columnTasks = filteredTasks.filter((task) => task.status === status);
+                  return (
+                    <section className={`task-column task-column-${status.toLowerCase().replace(" ", "-")}`} key={status}>
+                      <div className="task-column-heading">
+                        <span className="task-column-indicator" />
+                        <h3>{status}</h3>
+                        <span className="task-column-count">{columnTasks.length}</span>
+                      </div>
+                      <div className="task-column-list">
+                        {columnTasks.map((task) => (
+                          <TaskCard key={task.id} task={task} onAdvance={advanceTask} onDelete={deleteTask} />
+                        ))}
+                        {!columnTasks.length && <div className="task-column-empty">No tasks here</div>}
+                      </div>
+                    </section>
+                  );
+                })}
+              </div>
+              <p className="footnote">Tasks are stored locally in this browser and are not shared across devices or saved to the campus backend.</p>
+            </section>
+          )}
+
+          {page === "Resources" && (
+            <>
+            <div className="resource-summary">
+              <Metric label="Resource records" value={resources.length} detail="Across campus locations" icon="▤" />
+              <Metric label="Total capacity" value={total} detail="Tracked units and spaces" icon="▦" />
+              <Metric label="Available now" value={available} detail={`${total ? Math.round(available / total * 100) : 0}% of tracked capacity`} icon="✓" />
+              <Metric label="Needs attention" value={lowStockResources.length} detail="At or below 20% available" icon="!" />
+            </div>
+            <section className="panel resource-inventory-panel">
+              <div className="panel-header">
+              <div>
+                <span className="section-overline">CAMPUS ASSETS</span>
+                <h2>Resource inventory</h2>
+                <p>Monitor availability and manage equipment, spaces and facilities.</p>
+              </div>
+              <button className="button button-primary" onClick={() => {
+                if (showResourceForm) {
+                  setShowResourceForm(false);
+                  setEditingResourceId(null);
+                } else {
+                  openResourceForm();
+                }
+              }}>
+                {showResourceForm ? "Cancel" : "+ Add resource"}
+              </button>
+              </div>
               {showResourceForm && (
-                <form className="inline-form" onSubmit={addResource}>
-                  <input required value={newResource} onChange={(e) => setNewResource(e.target.value)} placeholder="Resource name" />
+              <form className="inline-form resource-form" onSubmit={saveResource}>
+                <label>Resource name
+                  <input required maxLength={63} value={newResource} onChange={(e) => setNewResource(e.target.value)} placeholder="e.g. Projector" />
+                </label>
+                <label>Category
                   <select value={resourceCategory} onChange={(e) => setResourceCategory(e.target.value)}>
                     <option>Equipment</option>
                     <option>Laboratory</option>
                     <option>Classroom</option>
                     <option>Study Space</option>
+                    <option>Facilities</option>
+                    <option>IT &amp; Network</option>
+                    <option>Safety</option>
+                    <option>Furniture</option>
                   </select>
-                  <button className="button button-primary" type="submit">Save resource</button>
-                </form>
+                </label>
+                <label>Location
+                  <input required maxLength={63} value={resourceLocation} onChange={(e) => setResourceLocation(e.target.value)} placeholder="Building or room" />
+                </label>
+                <label>Total units
+                  <input type="number" min="1" max="10000" value={resourceTotal} onChange={(e) => setResourceTotal(e.target.value)} required />
+                </label>
+                <button className="button button-primary" type="submit">{editingResourceId ? "Update resource" : "Save resource"}</button>
+              </form>
               )}
               <div className="search-box">
                 <span>⌕</span>
                 <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search resources, categories or locations..." />
               </div>
-              <ResourceTable resources={filteredResources} onToggle={toggleAvailability} />
+              <div className="category-filters" aria-label="Filter by resource category">
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    className={`category-filter ${resourceCategoryFilter === category ? "active" : ""}`}
+                    onClick={() => setResourceCategoryFilter(category)}
+                  >
+                    {category}
+                    {category === "All categories" && <span>{resources.length}</span>}
+                  </button>
+                ))}
+              </div>
+              <ResourceTable
+                resources={filteredResources}
+                onToggle={toggleAvailability}
+                onEdit={openResourceForm}
+                onDelete={deleteResource}
+              />
             </section>
+            </>
           )}
 
           {page === "Navigation" && (
@@ -467,14 +900,20 @@ export default function App() {
                 <button className="button button-primary" type="submit">+ Join queue</button>
               </form>
               <div className="queue-toolbar">
-                <span>{queue.length} student{queue.length !== 1 ? "s" : ""} waiting</span>
+                <span>
+                  {queue.length} waiting · Front: {queue[0]?.name || "—"} · Rear: {queue[queue.length - 1]?.name || "—"}
+                </span>
                 <button className="button button-secondary" onClick={serveNext} disabled={!queue.length}>Serve next student →</button>
               </div>
-              {queue.length ? (
+              <div className="search-box queue-search">
+                <span>⌕</span>
+                <input value={queueSearch} onChange={(e) => setQueueSearch(e.target.value)} placeholder="Search waiting requests..." aria-label="Search queue" />
+              </div>
+              {filteredQueue.length ? (
                 <div className="queue-list">
-                  {queue.map((student, index) => (
+                  {filteredQueue.map((student) => (
                     <div className="queue-row" key={student.id}>
-                      <div className="queue-number">{index + 1}</div>
+                      <div className="queue-number">{queue.findIndex((item) => item.id === student.id) + 1}</div>
                       <div className="queue-info">
                         <strong>{student.name}</strong>
                         <span>{student.service}</span>
@@ -483,28 +922,105 @@ export default function App() {
                     </div>
                   ))}
                 </div>
-              ) : <Empty text="The queue is empty. Add a student to begin." />}
+              ) : <Empty text={queue.length ? "No waiting requests match your search." : "The queue is empty. Add a student to begin."} />}
+              <div className="queue-history">
+                <h3>Recently served <span>this browser session</span></h3>
+                {queueHistory.length
+                  ? queueHistory.slice(0, 5).map((student) => (
+                    <div className="history-row" key={`${student.id}-${student.servedAt}`}>
+                      <strong>{student.name}</strong>
+                      <span>{student.service}</span>
+                      <time>{student.servedAt}</time>
+                    </div>
+                  ))
+                  : <p className="muted-copy">No completed requests recorded in this session.</p>}
+              </div>
             </section>
           )}
 
           {page === "DSA Explorer" && (
-            <div className="algorithm-grid">
-              {[
-                ["Dijkstra's algorithm", "Weighted graphs", "Find a minimum-cost path between campus locations.", "Navigation"],
-                ["Breadth-first search", "Queue + graph", "Explore connected locations level by level.", "Navigation"],
-                ["First-in, first-out", "Queue", "Process student service requests in arrival order.", "Student Queue"],
-                ["Linear search", "Array / list", "Find a resource by its name or category.", "Resources"],
-                ["Resource status", "Array of records", "Inspect resource availability and update units.", "Resources"],
-                ["Activity history", "List", "Review the most recent actions in this session.", "Activity Log"],
-              ].map(([title, type, desc, target]) => (
-                <button className="algorithm-card" key={title} onClick={() => setPage(target)}>
-                  <span className="algorithm-tag">{type}</span>
-                  <h3>{title}</h3>
-                  <p>{desc}</p>
-                  <span className="card-link">Open demonstration ↗</span>
-                </button>
-              ))}
-            </div>
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Graph traversal explorer</h2>
+                  <p>Runs the selected algorithm on the C backend's adjacency matrix.</p>
+                </div>
+                <span className="algorithm-tag">LIVE BACKEND</span>
+              </div>
+              <form className="traversal-form" onSubmit={runTraversal}>
+                <label>Algorithm
+                  <select value={algorithm} onChange={(event) => setAlgorithm(event.target.value)}>
+                    <option value="bfs">Breadth-first search (BFS)</option>
+                    <option value="dfs">Depth-first search (DFS)</option>
+                  </select>
+                </label>
+                <label>Starting vertex
+                  <select value={algorithmStart} onChange={(event) => setAlgorithmStart(Number(event.target.value))}>
+                    {locations.map((location) => (
+                      <option key={location.id} value={location.id}>{location.id} — {location.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <button className="button button-primary" type="submit" disabled={apiStatus !== "Connected"}>Run traversal</button>
+              </form>
+              {traversal && (
+                <div className="traversal-result" aria-live="polite">
+                  <div className="route-result-title">{traversal.algorithm.toUpperCase()} traversal order</div>
+                  <div className="route-steps">
+                    {traversal.names.map((name, index) => (
+                      <span key={`${traversal.order[index]}-${name}`}>
+                        <strong>{traversal.order[index]} · {name}</strong>
+                        {index < traversal.names.length - 1 && <i>→</i>}
+                      </span>
+                    ))}
+                  </div>
+                  <p className="footnote">
+                    Representation: {traversal.representation}. Time: {traversal.complexity.time};
+                    {" "}extra space: {traversal.complexity.space}. This illustrative graph is not a verified MIT walking map.
+                  </p>
+                </div>
+              )}
+              <div className="algorithm-grid dsa-reference">
+                <article className="algorithm-card">
+                  <span className="algorithm-tag">BFS · O(V²)</span>
+                  <h3>Breadth-first search</h3>
+                  <p>Visits graph neighbours level by level using a FIFO queue.</p>
+                </article>
+                <article className="algorithm-card">
+                  <span className="algorithm-tag">DFS · O(V²)</span>
+                  <h3>Depth-first search</h3>
+                  <p>Explores a branch before backtracking, using an explicit stack.</p>
+                </article>
+                <article className="algorithm-card">
+                  <span className="algorithm-tag">DIJKSTRA · O(V²)</span>
+                  <h3>Shortest path</h3>
+                  <p>Uses non-negative weighted graph edges. Choose source and destination in Navigation.</p>
+                  <button className="text-button" onClick={() => setPage("Navigation")}>Open route planner ↗</button>
+                </article>
+              </div>
+            </section>
+          )}
+
+          {page === "Reports" && (
+            <section className="panel">
+              <div className="panel-header">
+                <div>
+                  <h2>Campus operations report</h2>
+                  <p>Export campus tasks, backend inventory, queue and session-local service history.</p>
+                </div>
+                <button className="button button-primary" onClick={downloadReport}>Download CSV</button>
+              </div>
+              <div className="report-summary">
+                <Metric label="Inventory records" value={resources.length} detail="Current backend records" icon="▤" />
+                <Metric label="Units in use" value={total - available} detail="Calculated as total minus available" icon="↗" />
+                <Metric label="Queue requests" value={queue.length} detail="Currently waiting" icon="⇄" />
+                <Metric label="Served this session" value={queueHistory.length} detail="Browser session only" icon="✓" />
+                <Metric label="Open tasks" value={openTasks.length} detail="Saved in this browser" icon="◷" />
+              </div>
+              <p className="footnote">
+                This report uses local backend demonstration data. Campus tasks are saved in this browser; served-request history lasts for this browser session only.
+              </p>
+            </section>
           )}
 
           {page === "Activity Log" && (
@@ -516,18 +1032,22 @@ export default function App() {
                 </div>
                 <button className="button button-secondary" onClick={() => setLogs([])}>Clear log</button>
               </div>
-              {logs.length ? logs.map((log, i) => (
+              <div className="search-box">
+                <span>⌕</span>
+                <input value={activitySearch} onChange={(e) => setActivitySearch(e.target.value)} placeholder="Search activity..." aria-label="Search activity history" />
+              </div>
+              {filteredLogs.length ? filteredLogs.map((log, i) => (
                 <div className="activity-row" key={`${log}-${i}`}>
                   <span className="activity-dot" />
                   <span>{log}</span>
                 </div>
-              )) : <Empty text="No activity recorded yet." />}
+              )) : <Empty text={logs.length ? "No activity matches your search." : "No activity recorded yet."} />}
             </section>
           )}
 
           <footer className="footer">
-            <span>MIT SMART CAMPUS</span>
-            <span>Academic demonstration · Sample data only</span>
+            <span>MADRAS INSTITUTE OF TECHNOLOGY · ANNA UNIVERSITY</span>
+            <span>Independent academic demonstration · Not an official institutional service</span>
           </footer>
         </section>
       </main>
@@ -548,7 +1068,57 @@ function Metric({ label, value, detail, icon }) {
   );
 }
 
-function ResourceTable({ resources, onToggle }) {
+function formatTaskDate(value) {
+  const date = new Date(`${value}T00:00:00`);
+  if (Number.isNaN(date.getTime())) return "No due date";
+  return date.toLocaleDateString("en-IN", { day: "numeric", month: "short" });
+}
+
+function TaskRow({ task, onAdvance }) {
+  return (
+    <div className="upcoming-task">
+      <button
+        className={`task-check ${task.status === "Done" ? "checked" : ""}`}
+        onClick={() => onAdvance(task)}
+        aria-label={task.status === "Done" ? `Reopen ${task.title}` : `Advance ${task.title}`}
+      >
+        {task.status === "Done" ? "✓" : ""}
+      </button>
+      <div className="upcoming-task-copy">
+        <strong>{task.title}</strong>
+        <span>{task.area} <i>·</i> {task.owner}</span>
+      </div>
+      <span className={`priority-badge priority-${task.priority.toLowerCase()}`}>{task.priority}</span>
+      <time>{formatTaskDate(task.dueDate)}</time>
+    </div>
+  );
+}
+
+function TaskCard({ task, onAdvance, onDelete }) {
+  const nextAction = task.status === "To do"
+    ? "Start task"
+    : task.status === "In progress" ? "Complete" : "Reopen";
+  return (
+    <article className="task-card">
+      <div className="task-card-top">
+        <span className={`priority-badge priority-${task.priority.toLowerCase()}`}>{task.priority} priority</span>
+        <button className="task-delete" onClick={() => onDelete(task)} aria-label={`Delete ${task.title}`}>×</button>
+      </div>
+      <h4>{task.title}</h4>
+      <p>{task.description}</p>
+      <div className="task-card-meta">
+        <span>⌖ {task.area}</span>
+        <span>◉ {task.owner}</span>
+      </div>
+      <div className="task-card-bottom">
+        <time>◷ &nbsp;{formatTaskDate(task.dueDate)}</time>
+        <button onClick={() => onAdvance(task)}>{nextAction} <span>→</span></button>
+      </div>
+    </article>
+  );
+}
+
+function ResourceTable({ resources, onToggle, onEdit, onDelete }) {
   if (!resources.length) return <Empty text="No matching resources found." />;
   return (
     <div className="table-wrap">
@@ -559,7 +1129,7 @@ function ResourceTable({ resources, onToggle }) {
             <th>CATEGORY</th>
             <th>LOCATION</th>
             <th>AVAILABILITY</th>
-            <th>ACTION</th>
+            <th>ACTIONS</th>
           </tr>
         </thead>
         <tbody>
@@ -579,10 +1149,12 @@ function ResourceTable({ resources, onToggle }) {
                   <span>{item.available}/{item.total}</span>
                 </div>
               </td>
-              <td>
+              <td className="resource-actions">
                 <button className="table-action" onClick={() => onToggle(item.id)}>
                   {item.available > 0 ? "Mark used" : "Restock"}
                 </button>
+                <button className="table-action" onClick={() => onEdit(item)}>Edit</button>
+                <button className="table-action danger-action" onClick={() => onDelete(item)}>Delete</button>
               </td>
             </tr>
           ))}
