@@ -58,10 +58,17 @@ NOTES
   or file-backed persistence is not implemented.
 - The frontend loads inventory, queue, and location data from these API
   endpoints. Resource and queue actions are persisted in the backend's
-  in-memory state, and route calculations use its Dijkstra implementation.
-- Location ids and weights match the frontend's campus map.
+  in-memory state.
+- The Navigation page uses mapped campus places and OpenStreetMap tiles;
+  pedestrian directions are requested from the public Valhalla routing
+  service. This map works without the local C backend but requires internet
+  access. OpenStreetMap coverage can be incomplete, so verify directions
+  on campus.
+- GET /api/route remains a Dijkstra example over the illustrative graph.
+  It is not the Navigation page's walking route and its distances are not
+  real campus walking distances.
 - Seed inventory, queue records, and graph locations are illustrative
-  demonstration data, not verified MIT operational data or walking routes.
+  demonstration data, not verified MIT operational data.
 - The student directory and campus locations use illustrative demonstration
   records. Student records are held in memory and reset when the backend
   restarts.

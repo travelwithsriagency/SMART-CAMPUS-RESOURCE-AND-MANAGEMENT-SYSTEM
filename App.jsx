@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import "./style.css";
 
 const initialLocations = [
@@ -21,6 +23,28 @@ const initialEdges = [
   [3, 4, 2], [3, 5, 5], [4, 5, 3], [1, 6, 2], [6, 7, 2],
   [7, 5, 3], [2, 8, 3], [8, 5, 2], [1, 9, 2], [9, 3, 2],
   [3, 10, 2], [10, 11, 3], [11, 4, 2], [8, 11, 4], [6, 9, 3],
+];
+
+const campusPlaces = [
+  { id: "mit-campus", name: "MIT Campus", lat: 12.9485253, lon: 80.1403990, osmType: "way", osmId: 30749075 },
+  { id: "mit-flyover", name: "MIT Flyover approach", lat: 12.9462254, lon: 80.1380587, osmType: "node", osmId: 566892203 },
+  { id: "admin-block", name: "Admin Block & Dean Office", lat: 12.9480135, lon: 80.1392546, osmType: "way", osmId: 37133365 },
+  { id: "it-department", name: "Department of Information Technology", lat: 12.9480049, lon: 80.1400747, osmType: "way", osmId: 31276233 },
+  { id: "automobile-engineering", name: "Department of Automobile Engineering", lat: 12.9478814, lon: 80.1403398, osmType: "node", osmId: 432468205 },
+  { id: "electronics-old", name: "Electronics Engineering — Old Block", lat: 12.9482435, lon: 80.1402403, osmType: "way", osmId: 31276234 },
+  { id: "electronics-new", name: "Electronics Engineering — New Block", lat: 12.9484586, lon: 80.1404629, osmType: "way", osmId: 631591470 },
+  { id: "aeronautical-engineering", name: "Department of Aeronautical Engineering", lat: 12.9486173, lon: 80.1407986, osmType: "node", osmId: 432468196 },
+  { id: "mechatronics", name: "Mechatronics", lat: 12.9491126, lon: 80.1409786, osmType: "node", osmId: 432468200 },
+  { id: "production-technology", name: "Department of Production Technology", lat: 12.9492943, lon: 80.1410981, osmType: "node", osmId: 432468201 },
+  { id: "central-workshop", name: "Central Workshop", lat: 12.9497099, lon: 80.1406485, osmType: "way", osmId: 43442316 },
+  { id: "hangar-1", name: "Hangar 1", lat: 12.9501649, lon: 80.1408016, osmType: "way", osmId: 26562014 },
+  { id: "hangar-2", name: "Hangar 2", lat: 12.9493315, lon: 80.1402222, osmType: "way", osmId: 26562015 },
+  { id: "lecture-hall", name: "Lecture Hall Complex", lat: 12.9483025, lon: 80.1396260, osmType: "way", osmId: 31276228 },
+  { id: "rajam-hall", name: "Rajam Lecture Hall Complex", lat: 12.9484502, lon: 80.1397349, osmType: "way", osmId: 43826808 },
+  { id: "rubber-plastics", name: "Rubber and Plastics Technology", lat: 12.9474419, lon: 80.1402627, osmType: "way", osmId: 31276232 },
+  { id: "dcoe-office", name: "DCOE Office", lat: 12.9490115, lon: 80.1397326, osmType: "way", osmId: 31276227 },
+  { id: "instrumentation-1", name: "Instrumentation Engineering Block 1", lat: 12.9473280, lon: 80.1395802, osmType: "way", osmId: 37133364 },
+  { id: "instrumentation-2", name: "Instrumentation Engineering Block 2", lat: 12.9475429, lon: 80.1392970, osmType: "way", osmId: 37133367 },
 ];
 
 const taskStatuses = ["To do", "In progress", "Done"];
@@ -124,9 +148,12 @@ function CampusDashboard() {
   const [activitySearch, setActivitySearch] = useState("");
   const [notice, setNotice] = useState("");
   const [apiStatus, setApiStatus] = useState("Connecting…");
-  const [from, setFrom] = useState(0);
-  const [to, setTo] = useState(5);
-  const [route, setRoute] = useState(null);
+  const [from, setFrom] = useState("admin-block");
+  const [to, setTo] = useState("central-workshop");
+  const [walkingRoute, setWalkingRoute] = useState(null);
+  const [routeLoading, setRouteLoading] = useState(false);
+  const [routeError, setRouteError] = useState("");
+  const [routeRetry, setRouteRetry] = useState(0);
   const [algorithm, setAlgorithm] = useState("bfs");
   const [algorithmStart, setAlgorithmStart] = useState(0);
   const [traversal, setTraversal] = useState(null);
@@ -246,24 +273,91 @@ function CampusDashboard() {
   }, []);
 
   useEffect(() => {
-    if (apiStatus !== "Connected") return undefined;
-    let cancelled = false;
+    if (page !== "Navigation") return undefined;
+    const start = campusPlaces.find((place) => place.id === from);
+    const destination = campusPlaces.find((place) => place.id === to);
+    if (!start || !destination) {
+      setWalkingRoute(null);
+      setRouteLoading(false);
+      setRouteError("Choose a valid campus start and destination.");
+      return undefined;
+    }
+    if (start.id === destination.id) {
+      setWalkingRoute(null);
+      setRouteLoading(false);
+      setRouteError("Choose two different places to calculate a walking route.");
+      return undefined;
+    }
 
-    apiRequest(`/api/route?from=${from}&to=${to}`)
-      .then((data) => {
-        if (!cancelled) setRoute(data);
+    const controller = new AbortController();
+    const request = {
+      locations: [
+        { lat: start.lat, lon: start.lon, type: "break" },
+        { lat: destination.lat, lon: destination.lon, type: "break" },
+      ],
+      costing: "pedestrian",
+      units: "kilometers",
+      language: "en",
+    };
+    const url = new URL("https://valhalla1.openstreetmap.de/route");
+    url.searchParams.set("json", JSON.stringify(request));
+    const timeoutId = window.setTimeout(() => {
+      controller.abort();
+      setRouteLoading(false);
+      setRouteError("The walking route service timed out. Check your connection and try again.");
+    }, 20000);
+
+    setRouteLoading(true);
+    setRouteError("");
+    setWalkingRoute(null);
+    fetch(url, { signal: controller.signal, headers: { Accept: "application/json" } })
+      .then(async (response) => {
+        let data;
+        try {
+          data = await response.json();
+        } catch {
+          throw new Error("The walking route service returned an invalid response.");
+        }
+        if (!response.ok) {
+          throw new Error(data.error || `The walking route service failed (${response.status}).`);
+        }
+        const leg = data.trip?.legs?.[0];
+        if (!leg?.shape || !leg.summary || !Array.isArray(leg.maneuvers)) {
+          throw new Error(data.error || "No mapped pedestrian route was found for these locations.");
+        }
+        setWalkingRoute({
+          coordinates: decodePolyline(leg.shape),
+          distanceKm: leg.summary.length,
+          durationMinutes: Math.max(1, Math.round(leg.summary.time / 60)),
+          maneuvers: leg.maneuvers,
+        });
       })
       .catch((error) => {
-        if (!cancelled) {
-          setRoute(null);
-          setNotice(error.message);
+        if (error.name !== "AbortError") {
+          setRouteError(error.message || "Could not calculate a walking route.");
         }
+      })
+      .finally(() => {
+        window.clearTimeout(timeoutId);
+        if (!controller.signal.aborted) setRouteLoading(false);
       });
 
     return () => {
-      cancelled = true;
+      window.clearTimeout(timeoutId);
+      controller.abort();
     };
-  }, [apiStatus, from, to]);
+  }, [from, page, routeRetry, to]);
+
+  function chooseRouteStart(placeId) {
+    setFrom(placeId);
+    if (to === placeId) {
+      setTo(from);
+    }
+  }
+
+  function chooseRouteDestination(placeId) {
+    if (placeId !== from) setTo(placeId);
+  }
 
   async function addStudent(event) {
     event.preventDefault();
@@ -652,7 +746,7 @@ function CampusDashboard() {
                 {[
                   ["Students", students.length, "♙", "Students"],
                   ["Resources", resources.length, "▤", "Resources"],
-                  ["Campus locations", locations.length, "⌖", "Navigation"],
+                  ["Campus locations", campusPlaces.length, "⌖", "Navigation"],
                   ["Waiting requests", queue.length, "⇄", "Student Queue"],
                   ["Open tasks", openTasks.length, "✓", "Tasks"],
                   ["Available units", total ? `${Math.round(available / total * 100)}%` : "—", "↗", "Resources"],
@@ -727,16 +821,18 @@ function CampusDashboard() {
                 <section className="panel">
                   <div className="panel-header">
                     <div>
-                      <h2>Campus network</h2>
-                      <p>Connected locations · Weighted graph</p>
+                      <h2>Campus map</h2>
+                      <p>Mapped MIT buildings · Walking directions</p>
                     </div>
                     <button className="text-button" onClick={() => setPage("Navigation")}>Explore routes ↗</button>
                   </div>
-                  <CampusMap locations={locations} edges={edges} />
-                  <div className="map-legend">
-                    <span><i className="legend-node" /> Campus location</span>
-                    <span><i className="legend-line" /> Connected path</span>
-                  </div>
+                  <CampusMap
+                    places={campusPlaces}
+                    startId={from}
+                    destinationId={to}
+                    routeCoordinates={[]}
+                    onDestinationSelect={chooseRouteDestination}
+                  />
                 </section>
 
                 <section className="panel">
@@ -930,7 +1026,7 @@ function CampusDashboard() {
                 <Metric label="Registered students" value={students.length} detail="Campus directory records" icon="♙" />
                 <Metric label="Departments" value={departments.length} detail="Represented in this register" icon="▦" />
                 <Metric label="Currently queued" value={queue.length} detail="Waiting for student services" icon="⇄" />
-                <Metric label="Campus locations" value={locations.length} detail="Available for campus routing" icon="⌖" />
+                <Metric label="Campus locations" value={campusPlaces.length} detail="Mapped destinations" icon="⌖" />
               </div>
               <section className="panel student-directory-panel">
                 <div className="panel-header">
@@ -986,44 +1082,79 @@ function CampusDashboard() {
             <section className="panel">
               <div className="panel-header">
                 <div>
-                  <h2>Campus route planner</h2>
-                  <p>Dijkstra's shortest-path algorithm · {locations.length} campus destinations</p>
+                  <h2>MIT campus map &amp; walking directions</h2>
+                  <p>Real mapped buildings · OpenStreetMap pedestrian paths</p>
                 </div>
-                <span className="algorithm-tag">DIJKSTRA</span>
+                <span className="algorithm-tag">WALKING</span>
               </div>
-              <CampusMap locations={locations} edges={edges} activePath={route?.path || []} />
+              <CampusMap
+                places={campusPlaces}
+                startId={from}
+                destinationId={to}
+                routeCoordinates={walkingRoute?.coordinates || []}
+                onDestinationSelect={chooseRouteDestination}
+              />
               <div className="route-controls">
                 <label>
-                  Starting location
-                  <select value={from} onChange={(e) => setFrom(Number(e.target.value))}>
-                    {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                  Start
+                  <select value={from} onChange={(event) => chooseRouteStart(event.target.value)}>
+                    {campusPlaces.map((place) => <option key={place.id} value={place.id}>{place.name}</option>)}
                   </select>
                 </label>
                 <label>
                   Destination
-                  <select value={to} onChange={(e) => setTo(Number(e.target.value))}>
-                    {locations.map((loc) => <option key={loc.id} value={loc.id}>{loc.name}</option>)}
+                  <select value={to} onChange={(event) => setTo(event.target.value)}>
+                    {campusPlaces.map((place) => (
+                      <option key={place.id} value={place.id} disabled={place.id === from}>
+                        {place.name}
+                      </option>
+                    ))}
                   </select>
                 </label>
               </div>
-              {route ? (
-                <div className="route-result">
-                  <div className="route-result-title">Shortest route calculated</div>
-                  <div className="route-steps">
-                    {route.path.map((id, index) => (
-                      <span key={id}>
-                        <strong>{locations[id].name}</strong>
-                        {index < route.path.length - 1 && <i>→</i>}
-                      </span>
-                    ))}
+              <div className="walking-route" aria-live="polite">
+                {routeLoading && <div className="route-message">Calculating pedestrian directions…</div>}
+                {routeError && (
+                  <div className="route-message route-message-error" role="alert">
+                    <span>{routeError}</span>
+                    {!routeError.startsWith("Choose ") && (
+                      <button className="button button-secondary button-small" onClick={() => setRouteRetry((value) => value + 1)}>Try again</button>
+                    )}
                   </div>
-                  <div className="route-distance">
-                    <span>Total edge weight</span>
-                    <strong>{route.distance} units</strong>
-                  </div>
-                </div>
-              ) : <Empty text={apiStatus === "Connected" ? "No route found between these locations." : "Connect to the backend to calculate a route."} />}
-              <p className="footnote">Routes are calculated by the C backend using Dijkstra's algorithm across the illustrative 12-location campus network. This demonstration is not a verified MIT walking map.</p>
+                )}
+                {walkingRoute && (
+                  <>
+                    <div className="walking-route-header">
+                      <div className="walking-route-metrics">
+                        <div><strong>{formatRouteDistance(walkingRoute.distanceKm)}</strong><span>Walking distance</span></div>
+                        <div><strong>~{walkingRoute.durationMinutes} min</strong><span>Estimated walk</span></div>
+                      </div>
+                      <a
+                        className="button button-secondary button-small"
+                        href={getOpenStreetMapDirectionsUrl(from, to)}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Open directions ↗
+                      </a>
+                    </div>
+                    <ol className="walking-steps">
+                      {walkingRoute.maneuvers.map((maneuver, index) => (
+                        <li key={`${index}-${maneuver.instruction}`}>
+                          <span className="walking-step-number">{index + 1}</span>
+                          <span className="walking-step-copy">
+                            <strong>{maneuver.instruction}</strong>
+                            {maneuver.length > 0 && <small>{formatRouteDistance(maneuver.length)}</small>}
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                  </>
+                )}
+              </div>
+              <p className="footnote">
+                Map data © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noreferrer">OpenStreetMap contributors</a>. Walking directions use OpenStreetMap pedestrian paths via Valhalla; mapped paths may be incomplete, so verify your route on campus.
+              </p>
             </section>
           )}
 
@@ -1389,48 +1520,152 @@ function ResourceTable({ resources, onToggle, onEdit, onDelete }) {
   );
 }
 
-function CampusMap({ locations, edges, activePath = [] }) {
-  const isActive = (id) => activePath.includes(id);
+function CampusMap({ places, startId, destinationId, routeCoordinates, onDestinationSelect }) {
+  const mapElementRef = useRef(null);
+  const mapRef = useRef(null);
+  const markerRefs = useRef(new Map());
+  const routeLayerRef = useRef(null);
+  const destinationSelectRef = useRef(onDestinationSelect);
+
+  useEffect(() => {
+    destinationSelectRef.current = onDestinationSelect;
+  }, [onDestinationSelect]);
+
+  useEffect(() => {
+    if (!mapElementRef.current) return undefined;
+    const map = L.map(mapElementRef.current, {
+      scrollWheelZoom: false,
+      zoomControl: true,
+    });
+    mapRef.current = map;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap contributors</a>',
+    }).addTo(map);
+
+    const markerLayer = L.layerGroup().addTo(map);
+    places.forEach((place) => {
+      const marker = L.circleMarker([place.lat, place.lon], {
+        radius: 7,
+        color: "#fff",
+        weight: 2,
+        fillColor: "#2578b8",
+        fillOpacity: 1,
+      }).addTo(markerLayer);
+      marker.bindTooltip(place.name);
+      marker.bindPopup(place.name);
+      marker.on("click", () => destinationSelectRef.current(place.id));
+      markerRefs.current.set(place.id, marker);
+    });
+    map.fitBounds(L.latLngBounds(places.map((place) => [place.lat, place.lon])), { padding: [28, 28] });
+
+    const resizeFrame = requestAnimationFrame(() => map.invalidateSize());
+    return () => {
+      cancelAnimationFrame(resizeFrame);
+      map.remove();
+      mapRef.current = null;
+      markerRefs.current.clear();
+    };
+  }, [places]);
+
+  useEffect(() => {
+    markerRefs.current.forEach((marker, id) => {
+      const isStart = id === startId;
+      const isDestination = id === destinationId;
+      marker.setStyle({
+        radius: isStart || isDestination ? 9 : 7,
+        color: "#fff",
+        weight: 2,
+        fillColor: isStart ? "#19784b" : isDestination ? "#cc563d" : "#2578b8",
+        fillOpacity: 1,
+      });
+    });
+  }, [destinationId, startId]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (routeLayerRef.current) routeLayerRef.current.remove();
+    routeLayerRef.current = null;
+
+    if (routeCoordinates.length < 2) return;
+    const routeLayer = L.layerGroup().addTo(map);
+    const routeLine = L.polyline(routeCoordinates, {
+      color: "#fff",
+      weight: 10,
+      opacity: 0.9,
+      lineCap: "round",
+      lineJoin: "round",
+    }).addTo(routeLayer);
+    L.polyline(routeCoordinates, {
+      color: "#176fc1",
+      weight: 6,
+      opacity: 0.96,
+      lineCap: "round",
+      lineJoin: "round",
+    }).addTo(routeLayer);
+    routeLayerRef.current = routeLayer;
+    map.fitBounds(routeLine.getBounds(), { padding: [48, 48], maxZoom: 19 });
+  }, [routeCoordinates]);
+
   return (
-    <div className="campus-map">
-      <div className="map-watermark">ILLUSTRATIVE CAMPUS NETWORK</div>
-      <svg className="map-lines" viewBox="0 0 100 100" preserveAspectRatio="none" aria-label="Campus network connections">
-        {edges.map(([a, b, weight]) => {
-          const p1 = locations[a];
-          const p2 = locations[b];
-          const highlighted = activePath.includes(a) && activePath.includes(b) &&
-            Math.abs(activePath.indexOf(a) - activePath.indexOf(b)) === 1;
-          return (
-            <g key={`${a}-${b}`}>
-              <line
-                x1={p1.x} y1={p1.y} x2={p2.x} y2={p2.y}
-                stroke={highlighted ? "#0c9488" : "#cbd5e1"}
-                strokeWidth={highlighted ? "0.7" : "0.35"}
-                strokeDasharray={highlighted ? "0" : "1.5 1.5"}
-              />
-              <text
-                x={(p1.x + p2.x) / 2}
-                y={(p1.y + p2.y) / 2 - 2}
-                fontSize="3"
-                fill="#64748b"
-                textAnchor="middle"
-              >{weight}</text>
-            </g>
-          );
-        })}
-      </svg>
-      {locations.map((loc) => (
-        <div
-          className={`map-node ${isActive(loc.id) ? "selected" : ""}`}
-          key={loc.id}
-          style={{ left: `${loc.x}%`, top: `${loc.y}%` }}
-        >
-          <span className="node-point" />
-          <span className="node-label">{loc.name}</span>
-        </div>
-      ))}
-    </div>
+    <>
+      <div className="campus-map" ref={mapElementRef} role="application" aria-label="Interactive OpenStreetMap of MIT campus buildings" />
+      <div className="map-legend" aria-label="Map marker legend">
+        <span><i className="map-key map-key-start" /> Start</span>
+        <span><i className="map-key map-key-destination" /> Destination</span>
+        <span><i className="map-key map-key-place" /> Campus place</span>
+        <span className="map-help">Select a pin to set it as your destination.</span>
+      </div>
+    </>
   );
+}
+
+function decodePolyline(encoded) {
+  const coordinates = [];
+  let index = 0;
+  let latitude = 0;
+  let longitude = 0;
+  const factor = 1e6;
+
+  function readCoordinate() {
+    let result = 0;
+    let shift = 0;
+    let byte;
+    do {
+      if (index >= encoded.length) throw new Error("The walking route geometry is incomplete.");
+      byte = encoded.charCodeAt(index++) - 63;
+      result |= (byte & 0x1f) << shift;
+      shift += 5;
+    } while (byte >= 0x20);
+    return result & 1 ? ~(result >> 1) : result >> 1;
+  }
+
+  while (index < encoded.length) {
+    latitude += readCoordinate();
+    longitude += readCoordinate();
+    coordinates.push([latitude / factor, longitude / factor]);
+  }
+  if (coordinates.length < 2) throw new Error("The walking route geometry is invalid.");
+  return coordinates;
+}
+
+function formatRouteDistance(distanceKm) {
+  return distanceKm < 1
+    ? `${Math.round(distanceKm * 1000)} m`
+    : `${distanceKm.toFixed(1)} km`;
+}
+
+function getOpenStreetMapDirectionsUrl(startId, destinationId) {
+  const start = campusPlaces.find((place) => place.id === startId);
+  const destination = campusPlaces.find((place) => place.id === destinationId);
+  const url = new URL("https://www.openstreetmap.org/directions");
+  url.searchParams.set("engine", "fossgis_osrm_foot");
+  if (start && destination) {
+    url.searchParams.set("route", `${start.lat},${start.lon};${destination.lat},${destination.lon}`);
+  }
+  return url.toString();
 }
 
 function Empty({ text }) {

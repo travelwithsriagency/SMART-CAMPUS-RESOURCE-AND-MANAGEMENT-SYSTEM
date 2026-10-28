@@ -25,6 +25,20 @@ jobs:
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
 
+      - name: Verify GitHub Pages uses Actions
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          config="$(curl --fail --silent --show-error \
+            --header "Authorization: Bearer ${GH_TOKEN}" \
+            --header "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages")"
+          build_type="$(jq -r '.build_type // "unset"' <<< "$config")"
+          if [[ "$build_type" != "workflow" ]]; then
+            echo "::error title=GitHub Pages source mismatch::Set Settings > Pages > Build and deployment > Source to GitHub Actions, then rerun this workflow. Current source: ${build_type}."
+            exit 1
+          fi
+
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
