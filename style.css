@@ -477,3 +477,155 @@ tbody tr:hover { background: #fafcfe; }
   .resource-summary .metric-card { min-height: 112px; padding: 14px; }
   .category-filters { gap: 5px; }
 }
+
+:root {
+  color: #e4ecf7;
+  background: #0a1321;
+  --navy: #101d30;
+  --navy-soft: #1a2a40;
+  --teal-light: #153b3b;
+  --muted: #9aaac0;
+  --border: #293a52;
+  --surface: #121f32;
+}
+body { background: #0a1321; color: #e4ecf7; }
+.main-content { background: radial-gradient(ellipse at 68% 0, #12263b80, transparent 46%), #0b1524; }
+.topbar { background: #101b2bd9; border-bottom-color: #26364a; }
+.breadcrumb { color: #9eacc0; }
+.breadcrumb strong { color: #edf3fa; }
+.crumb-divider { color: #61728a; }
+.page-heading p { color: #9aa9bd; }
+h1 { color: #f0f5fb; }
+.date-label span { color: #8596ac; }
+.date-label strong { color: #d7e1ee; }
+.panel, .metric-card, .algorithm-card {
+  background: linear-gradient(145deg, #142238, #111e30);
+  border-color: #293b53;
+  box-shadow: 0 8px 26px #02071129;
+}
+.panel-header h2, .metric-value, .algorithm-card h3 { color: #e7eef8; }
+.panel-header p, .metric-top, .metric-detail, .algorithm-card p { color: #9baac0; }
+.metric-card::after { background: #1a3742; }
+.metric-icon, .algorithm-tag { background: #193b3c; color: #71d5c3; }
+.text-button { color: #69d1c0; }
+.text-button:hover { color: #a1f0df; }
+.button-secondary { background: #17263b; border-color: #344860; color: #d4dfeb; }
+.button-secondary:hover { background: #20334b; }
+.button-primary { background: #0c9488; color: #f5fffd; }
+.button-primary:hover { background: #11aa9c; }
+.data-source-banner { background: #122a2c; border-color: #28504c; color: #b7c9ce; }
+.data-source-banner strong { color: #73d6c1; }
+.overview-hero {
+  border: 1px solid #2a5960;
+  background:
+    radial-gradient(ellipse at 86% 20%, #5ec4b32b 0, transparent 35%),
+    linear-gradient(115deg, #14253c 0%, #17384e 58%, #12685f 125%);
+}
+.orbit-chip { background: #132d42e8; }
+.campus-map {
+  height: 360px;
+  background-color: #111e30;
+  background-image: linear-gradient(#24354a 1px, transparent 1px), linear-gradient(90deg, #24354a 1px, transparent 1px);
+  border-color: #2a3a50;
+}
+.node-point { background: #152a3a; border-color: #4fc4b4; box-shadow: 0 0 0 3px #30a99626; }
+.node-label { background: #17273a; border-color: #35485f; color: #dce7f3; box-shadow: 0 4px 12px #02071166; }
+.map-watermark { color: #8193aa; }
+.map-legend { color: #a0aec0; }
+.legend-line { background: #60728a; }
+.queue-row, .activity-row { border-color: #27374c; color: #b7c4d5; }
+.queue-number { background: #193b3c; color: #70d4c2; }
+.queue-info strong, .resource-name { color: #e1eaf5; }
+.queue-info span, .resource-id { color: #97a8bd; }
+.priority.normal { background: #1b2b40; color: #b2c1d3; }
+.priority.high { background: #48351f; color: #f2bf75; }
+.priority-badge.priority-high { background: #472b30; color: #ff9a8d; }
+.priority-badge.priority-medium { background: #45391f; color: #f5c66f; }
+.priority-badge.priority-low { background: #25364b; color: #bac9dc; }
+th { background: #17263a; color: #a0afc3; }
+td { color: #bac7d8; border-color: #29394e; }
+tbody tr:hover { background: #1a2b41; }
+.table-wrap { border-color: #293b53; }
+.table-action { background: #17273c; border-color: #344960; color: #72d6c5; }
+.table-action:hover { background: #203a49; }
+.availability-track { background: #2b3a4d; }
+.availability-track div { background: linear-gradient(90deg, #16a08f, #66d0b5); }
+input, select {
+  background: #101d2e; border-color: #34465c; color: #e0e9f4;
+  color-scheme: dark;
+}
+input::placeholder { color: #75869c; }
+input:focus, select:focus { border-color: #37b9a7; box-shadow: 0 0 0 3px #0c94882b; }
+.search-box { background: #101d2e; border-color: #34465c; color: #a4b2c4; }
+.search-box input { background: transparent; }
+.route-result, .traversal-result { background: #142a2a; border-color: #2a514b; }
+.route-result-title { color: #78d7c2; }
+.route-steps strong { background: #172c35; border-color: #31544f; color: #deeee9; }
+.route-distance { border-color: #31544f; color: #b1c2c7; }
+.route-distance strong { color: #76ddc4; }
+.footnote, .muted-copy { color: #91a0b4; }
+.notice { background: #163435; border-color: #2c5e58; color: #a4e1d3; }
+.alert-panel { background: #29251d; border-color: #62502e; }
+.alert-row { border-color: #493c28; color: #c1b59c; }
+.alert-row strong { color: #f0dfbd; }
+.alert-severity { color: #f0be68; }
+.task-summary { border-color: #2c3c52; }
+.task-summary > div { border-color: #2b3c51; color: #a3b1c4; }
+.task-summary strong { color: #e4edf7; }
+.task-column { background: #0f1b2b; border-color: #293a50; }
+.task-column-heading h3 { color: #e0e9f4; }
+.task-column-count { background: #24354a; color: #c2cede; }
+.task-card { background: #17263a; border-color: #304158; box-shadow: 0 4px 12px #02071124; }
+.task-card:hover { box-shadow: 0 10px 24px #0207114d; }
+.task-card h4 { color: #e4edf7; }
+.task-card p, .task-card-meta, .task-card-bottom time { color: #9baac0; }
+.task-card-meta { border-color: #2d3e54; }
+.task-card-bottom button { background: #1b3d3c; color: #77deca; }
+.task-card-bottom button:hover { background: #24534e; }
+.task-delete { color: #92a2b7; }
+.task-delete:hover { background: #482b30; color: #ff9a8d; }
+.task-column-empty, .empty-state { color: #99a8bb; }
+.empty-state span { color: #65768d; }
+.task-form { background: #101d2e; border-color: #2e4057; }
+.category-filter { background: #15243a; border-color: #34465c; color: #bbc8d8; }
+.category-filter span { color: #9cacc1; }
+.category-filter.active { background: #173a39; border-color: #2d6860; color: #78dec9; }
+.inventory-foot { border-color: #2b3c52; color: #a3b2c5; }
+.inventory-foot strong { color: #79ddc8; }
+.student-form { background: #101d2e; border-color: #2e4057; }
+.student-form label { color: #aab8ca; }
+.student-toolbar { color: #9baac0; }
+.student-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; margin-bottom: 20px; }
+.student-form { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 18px 0; padding: 17px; border: 1px solid #2e4057; border-radius: 11px; }
+.student-form label { display: grid; gap: 6px; color: #aab8ca; font-size: 9px; font-weight: 600; }
+.student-form input, .student-form select { min-height: 39px; padding: 9px 10px; font-size: 11px; }
+.student-form button { align-self: end; justify-self: start; }
+.student-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 15px; margin: 18px 0 14px; color: #9baac0; font-size: 10px; }
+.student-toolbar .search-box { flex: 1; max-width: 520px; margin: 0; }
+.student-name-cell { display: flex; align-items: center; gap: 10px; }
+.student-avatar { display: grid; place-items: center; width: 31px; height: 31px; border-radius: 10px; background: #1c4241; color: #79dfc9; font-weight: 700; }
+.student-name-cell > span:last-child { display: grid; gap: 4px; }
+.student-name-cell strong { color: #e3ecf6; font-size: 10px; }
+.student-name-cell small { color: #93a4b9; font-size: 9px; }
+.year-chip { display: inline-block; padding: 5px 8px; border-radius: 6px; background: #1b2d42; color: #c1d0e0; font-size: 9px; }
+.student-table { min-width: 760px; }
+.student-avatar { background: #1c4241; color: #79dfc9; }
+.student-name-cell strong { color: #e3ecf6; }
+.student-name-cell small { color: #93a4b9; }
+.year-chip { background: #1b2d42; color: #c1d0e0; }
+.danger-action { color: #ff9a8d; }
+.history-row { border-color: #2b3b51; color: #b0bfd1; }
+.history-row strong { color: #e2eaf5; }
+.history-row time { color: #92a2b7; }
+.footer { border-color: #28384d; color: #8596ad; }
+.sidebar { background: linear-gradient(165deg, #0d192a 0%, #12243a 55%, #0c192a 100%); }
+.sidebar-bottom { border-color: #ffffff19; }
+
+@media (max-width: 700px) {
+  .campus-map { height: 310px; }
+  .map-node { max-width: 90px; }
+  .node-label { font-size: 7px; padding: 3px 4px; }
+  .student-form { grid-template-columns: 1fr; }
+  .student-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .student-toolbar { align-items: stretch; flex-direction: column; }
+}

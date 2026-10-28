@@ -35,6 +35,9 @@ POST   /api/resources               add: {"name","category","location","total"}
 PUT    /api/resources/{id}          edit resource fields
 POST   /api/resources/{id}/use      mark one unit used (restocks when none left)
 DELETE /api/resources/{id}          delete a resource
+GET    /api/students                list student directory records
+POST   /api/students                register: {"rollNumber","name","department","year","email"}
+DELETE /api/students/{id}           remove a student directory record
 GET    /api/queue                   students waiting (FIFO order)
 POST   /api/queue                   join queue: {"name","service"}
 POST   /api/queue/serve             serve the next student
@@ -48,7 +51,7 @@ DATA STRUCTURES USED
 - Student queue: circular array queue (FIFO)
 - Campus network: adjacency matrix with Dijkstra shortest path
 - Campus traversal: BFS queue and DFS stack over the adjacency matrix
-- Location ids are 0..5 (see /api/locations)
+- Location ids are 0..11 (see /api/locations)
 
 NOTES
 - Data is held in memory and resets when the server restarts. MongoDB
@@ -59,6 +62,9 @@ NOTES
 - Location ids and weights match the frontend's campus map.
 - Seed inventory, queue records, and graph locations are illustrative
   demonstration data, not verified MIT operational data or walking routes.
+- The student directory and campus locations use illustrative demonstration
+  records. Student records are held in memory and reset when the backend
+  restarts.
 - The task board starts with illustrative campus operations tasks and saves
   task changes in the current browser's local storage. Tasks are not shared
   with the backend or other browsers.

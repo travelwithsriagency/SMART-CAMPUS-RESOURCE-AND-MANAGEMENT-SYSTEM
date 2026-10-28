@@ -36,6 +36,7 @@ typedef int sock_t;
 #endif
 
 #include <ctype.h>
+#include <limits.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -44,7 +45,8 @@ typedef int sock_t;
 #define PORT 8080
 #define MAX_RESOURCES 100
 #define MAX_QUEUE 100
-#define MAX_LOCATIONS 6
+#define MAX_STUDENTS 200
+#define MAX_LOCATIONS 12
 #define NAME_LEN 64
 #define REQ_SIZE 16384
 #define OUT_SIZE 65536
@@ -66,6 +68,15 @@ typedef struct {
     char name[NAME_LEN];
     char service[NAME_LEN];
 } Student;
+
+typedef struct {
+    int id;
+    char rollNumber[NAME_LEN];
+    char name[NAME_LEN];
+    char department[NAME_LEN];
+    int year;
+    char email[NAME_LEN];
+} CampusStudent;
 
 typedef struct {
     char method[16];
@@ -92,6 +103,10 @@ static int queueHead = 0;
 static int queueCount = 0;
 static int nextStudentId = 1;
 
+static CampusStudent campusStudents[MAX_STUDENTS];
+static int campusStudentCount = 0;
+static int nextCampusStudentId = 1;
+
 /* Campus network: weighted undirected graph as adjacency matrix (0 = no edge)
  */
 static const char *locationNames[MAX_LOCATIONS] = {"Main Gate",
@@ -99,15 +114,18 @@ static const char *locationNames[MAX_LOCATIONS] = {"Main Gate",
                                                    "Library",
                                                    "Department Block",
                                                    "Computer Lab",
-                                                   "Cafeteria"};
-static const int edgeList[][3] = {{0, 1, 4},
-                                  {0, 2, 3},
-                                  {1, 2, 2},
-                                  {1, 3, 3},
-                                  {2, 4, 4},
-                                  {3, 4, 2},
-                                  {3, 5, 5},
-                                  {4, 5, 3}};
+                                                   "Cafeteria",
+                                                   "Lecture Hall A",
+                                                   "Lecture Hall B",
+                                                   "Student Centre",
+                                                   "Administration Office",
+                                                   "Biology Lab",
+                                                   "Workshop"};
+static const int edgeList[][3] = {
+    {0, 1, 4},  {0, 2, 3},  {1, 2, 2},  {1, 3, 3},  {2, 4, 4},
+    {3, 4, 2},  {3, 5, 5},  {4, 5, 3},  {1, 6, 2},  {6, 7, 2},
+    {7, 5, 3},  {2, 8, 3},  {8, 5, 2},  {1, 9, 2},  {9, 3, 2},
+    {3, 10, 2}, {10, 11, 3}, {11, 4, 2}, {8, 11, 4}, {6, 9, 3}};
 #define EDGE_COUNT (int)(sizeof(edgeList) / sizeof(edgeList[0]))
 static int graph[MAX_LOCATIONS][MAX_LOCATIONS];
 
@@ -236,7 +254,7 @@ static int jsonInt(const char *json, const char *key, int *value) {
         p++;
     char *end;
     long v = strtol(p, &end, 10);
-    if (end == p)
+    if (end == p || v < INT_MIN || v > INT_MAX)
         return 0;
     *value = (int)v;
     return 1;
@@ -434,6 +452,18 @@ static void writeStudent(Out *o, const Student *s, int position) {
     outJsonString(o, s->name);
     outStr(o, ",\"service\":");
     outJsonString(o, s->service);
+    outChar(o, '}');
+}
+
+static void writeCampusStudent(Out *o, const CampusStudent *student) {
+    outFmt(o, "{\"id\":%d,\"rollNumber\":", student->id);
+    outJsonString(o, student->rollNumber);
+    outStr(o, ",\"name\":");
+    outJsonString(o, student->name);
+    outStr(o, ",\"department\":");
+    outJsonString(o, student->department);
+    outFmt(o, ",\"year\":%d,\"email\":", student->year);
+    outJsonString(o, student->email);
     outChar(o, '}');
 }
 
@@ -642,6 +672,80 @@ static int handleServe(Out *o) {
     return 200;
 }
 
+/* ---------- Student directory ---------- */
+
+static int findCampusStudent(int id) {
+    for (int i = 0; i < campusStudentCount; i++) {
+        if (campusStudents[i].id == id)
+            return i;
+    }
+    return -1;
+}
+
+static int handleListCampusStudents(Out *o) {
+    outChar(o, '[');
+    for (int i = 0; i < campusStudentCount; i++) {
+        if (i)
+            outChar(o, ',');
+        writeCampusStudent(o, &campusStudents[i]);
+    }
+    outChar(o, ']');
+    return 200;
+}
+
+static int handleAddCampusStudent(const char *body, Out *o) {
+    char rollNumber[NAME_LEN] = "";
+    char name[NAME_LEN] = "";
+    char department[NAME_LEN] = "";
+    char email[NAME_LEN] = "";
+    int year = 0;
+
+    if (!jsonString(body, "rollNumber", rollNumber, sizeof rollNumber) ||
+        rollNumber[0] == '\0' ||
+        !jsonString(body, "name", name, sizeof name) || name[0] == '\0' ||
+        !jsonString(body, "department", department, sizeof department) ||
+        department[0] == '\0' || !jsonInt(body, "year", &year) ||
+        year < 1 || year > 6 ||
+        !jsonString(body, "email", email, sizeof email) || email[0] == '\0') {
+        writeError(o, "Roll number, name, department, year (1-6), and email are required");
+        return 400;
+    }
+
+    for (int i = 0; i < campusStudentCount; i++) {
+        if (equalsIgnoreCase(campusStudents[i].rollNumber, rollNumber)) {
+            writeError(o, "A student with this roll number already exists");
+            return 409;
+        }
+    }
+    if (campusStudentCount >= MAX_STUDENTS) {
+        writeError(o, "Student directory is full");
+        return 409;
+    }
+
+    CampusStudent *student = &campusStudents[campusStudentCount++];
+    student->id = nextCampusStudentId++;
+    copyStr(student->rollNumber, rollNumber, sizeof student->rollNumber);
+    copyStr(student->name, name, sizeof student->name);
+    copyStr(student->department, department, sizeof student->department);
+    student->year = year;
+    copyStr(student->email, email, sizeof student->email);
+    writeCampusStudent(o, student);
+    return 201;
+}
+
+static int handleDeleteCampusStudent(int id, Out *o) {
+    int index = findCampusStudent(id);
+    if (index < 0) {
+        writeError(o, "Student not found");
+        return 404;
+    }
+    for (int i = index; i < campusStudentCount - 1; i++)
+        campusStudents[i] = campusStudents[i + 1];
+    campusStudentCount--;
+    outFmt(o, "{\"deleted\":%d}", id);
+    return 200;
+}
+
 /* ---------- Campus navigation (Dijkstra) ---------- */
 
 static void buildGraph(void) {
@@ -719,7 +823,7 @@ static int handleRoutePlan(const char *query, Out *o) {
     int from = -1, to = -1, path[MAX_LOCATIONS], pathLen = 0;
     if (!queryInt(query, "from", &from) || !queryInt(query, "to", &to) ||
         from < 0 || from >= MAX_LOCATIONS || to < 0 || to >= MAX_LOCATIONS) {
-        writeError(o, "Provide from and to as location ids from 0 to 5");
+        writeError(o, "Provide valid from and to campus location ids");
         return 400;
     }
 
@@ -825,9 +929,12 @@ static int handleTraversal(const char *query, Out *o) {
 static int handleHealth(Out *o) {
     outFmt(o,
            "{\"status\":\"Connected\",\"service\":\"smart-campus-c-backend\","
-           "\"resources\":%d,\"queueLength\":%d}",
+           "\"resources\":%d,\"queueLength\":%d,\"students\":%d,"
+           "\"locations\":%d}",
            resourceCount,
-           queueCount);
+           queueCount,
+           campusStudentCount,
+           MAX_LOCATIONS);
     return 200;
 }
 
@@ -843,6 +950,28 @@ static int dispatch(const Request *req, Out *o) {
         return handleRoutePlan(req->query, o);
     if (strcmp(p, "/api/traverse") == 0 && strcmp(m, "GET") == 0)
         return handleTraversal(req->query, o);
+
+    if (strcmp(p, "/api/students") == 0) {
+        if (strcmp(m, "GET") == 0)
+            return handleListCampusStudents(o);
+        if (strcmp(m, "POST") == 0)
+            return handleAddCampusStudent(req->body, o);
+        writeError(o, "Method not allowed");
+        return 405;
+    }
+
+    if (strncmp(p, "/api/students/", 14) == 0) {
+        char *end;
+        long id = strtol(p + 14, &end, 10);
+        if (end == p + 14 || *end != '\0' || id < 1 || id > 2147483647L) {
+            writeError(o, "Invalid student id");
+            return 400;
+        }
+        if (strcmp(m, "DELETE") == 0)
+            return handleDeleteCampusStudent((int)id, o);
+        writeError(o, "Method not allowed");
+        return 405;
+    }
 
     if (strcmp(p, "/api/resources") == 0) {
         if (strcmp(m, "GET") == 0)
@@ -926,6 +1055,22 @@ static void seedData(void) {
     addSeedResource("Water Dispenser", "Facilities", "Student Centre", 9, 7);
     addSeedResource("Study Desk", "Furniture", "Library", 40, 32);
     addSeedResource("Network Switch", "IT & Network", "Network Room", 5, 1);
+
+    const CampusStudent seededStudents[] = {
+        {0, "MIT2024001", "Aarav Kumar", "Computer Technology", 3, "aarav.kumar@example.edu"},
+        {0, "MIT2024002", "Ananya Iyer", "Electronics Engineering", 2, "ananya.iyer@example.edu"},
+        {0, "MIT2024003", "Dev Patel", "Information Technology", 4, "dev.patel@example.edu"},
+        {0, "MIT2024004", "Ishita Rao", "Aeronautical Engineering", 1, "ishita.rao@example.edu"},
+        {0, "MIT2024005", "Kabir Shah", "Computer Technology", 3, "kabir.shah@example.edu"},
+        {0, "MIT2024006", "Meera Nair", "Electronics Engineering", 2, "meera.nair@example.edu"},
+        {0, "MIT2024007", "Rohan Das", "Information Technology", 1, "rohan.das@example.edu"},
+        {0, "MIT2024008", "Sara Thomas", "Production Technology", 4, "sara.thomas@example.edu"},
+    };
+    for (size_t i = 0; i < sizeof seededStudents / sizeof seededStudents[0]; i++) {
+        campusStudents[campusStudentCount] = seededStudents[i];
+        campusStudents[campusStudentCount].id = nextCampusStudentId++;
+        campusStudentCount++;
+    }
 
     const char *students[][2] = {
         {"Student 001", "Library Help Desk"},

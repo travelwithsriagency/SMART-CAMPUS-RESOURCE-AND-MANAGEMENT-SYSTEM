@@ -2,17 +2,25 @@ import { useEffect, useState } from "react";
 import "./style.css";
 
 const initialLocations = [
-  { id: 0, name: "Main Gate", x: 10, y: 49 },
-  { id: 1, name: "Main Block", x: 34, y: 27 },
-  { id: 2, name: "Library", x: 34, y: 73 },
-  { id: 3, name: "Department Block", x: 60, y: 27 },
-  { id: 4, name: "Computer Lab", x: 60, y: 73 },
-  { id: 5, name: "Cafeteria", x: 87, y: 49 },
+  { id: 0, name: "Main Gate", x: 20, y: 52 },
+  { id: 1, name: "Main Block", x: 31, y: 28 },
+  { id: 2, name: "Library", x: 31, y: 76 },
+  { id: 3, name: "Department Block", x: 52, y: 28 },
+  { id: 4, name: "Computer Lab", x: 52, y: 76 },
+  { id: 5, name: "Cafeteria", x: 80, y: 52 },
+  { id: 6, name: "Lecture Hall A", x: 72, y: 20 },
+  { id: 7, name: "Lecture Hall B", x: 80, y: 22 },
+  { id: 8, name: "Student Centre", x: 72, y: 76 },
+  { id: 9, name: "Administration Office", x: 20, y: 24 },
+  { id: 10, name: "Biology Lab", x: 80, y: 78 },
+  { id: 11, name: "Workshop", x: 20, y: 80 },
 ];
 
 const initialEdges = [
-  [0, 1, 4], [0, 2, 3], [1, 2, 2], [1, 3, 3],
-  [2, 4, 4], [3, 4, 2], [3, 5, 5], [4, 5, 3],
+  [0, 1, 4], [0, 2, 3], [1, 2, 2], [1, 3, 3], [2, 4, 4],
+  [3, 4, 2], [3, 5, 5], [4, 5, 3], [1, 6, 2], [6, 7, 2],
+  [7, 5, 3], [2, 8, 3], [8, 5, 2], [1, 9, 2], [9, 3, 2],
+  [3, 10, 2], [10, 11, 3], [11, 4, 2], [8, 11, 4], [6, 9, 3],
 ];
 
 const taskStatuses = ["To do", "In progress", "Done"];
@@ -81,6 +89,7 @@ const navGroups = [
     items: [
       ["Overview", "▦"],
       ["Tasks", "✓"],
+      ["Students", "♙"],
       ["Resources", "▤"],
       ["Navigation", "⌖"],
       ["Student Queue", "⇄"],
@@ -103,6 +112,7 @@ export default function App() {
 function CampusDashboard() {
   const [page, setPage] = useState("Overview");
   const [resources, setResources] = useState([]);
+  const [students, setStudents] = useState([]);
   const [tasks, setTasks] = useState(loadTasks);
   const [queue, setQueue] = useState([]);
   const [queueHistory, setQueueHistory] = useState([]);
@@ -122,6 +132,13 @@ function CampusDashboard() {
   const [traversal, setTraversal] = useState(null);
   const [newStudent, setNewStudent] = useState("");
   const [newService, setNewService] = useState("Library Help Desk");
+  const [studentSearch, setStudentSearch] = useState("");
+  const [showStudentForm, setShowStudentForm] = useState(false);
+  const [newRollNumber, setNewRollNumber] = useState("");
+  const [newStudentName, setNewStudentName] = useState("");
+  const [newDepartment, setNewDepartment] = useState("");
+  const [newStudentYear, setNewStudentYear] = useState("1");
+  const [newStudentEmail, setNewStudentEmail] = useState("");
   const [newResource, setNewResource] = useState("");
   const [resourceCategory, setResourceCategory] = useState("Equipment");
   const [resourceLocation, setResourceLocation] = useState("");
@@ -142,6 +159,12 @@ function CampusDashboard() {
 
   const available = resources.reduce((sum, item) => sum + item.available, 0);
   const total = resources.reduce((sum, item) => sum + item.total, 0);
+  const departments = [...new Set(students.map((student) => student.department))];
+  const filteredStudents = students.filter((student) =>
+    `${student.rollNumber} ${student.name} ${student.department} ${student.email}`
+      .toLowerCase()
+      .includes(studentSearch.toLowerCase())
+  );
   const openTasks = tasks.filter((task) => task.status !== "Done");
   const completedTasks = tasks.filter((task) => task.status === "Done");
   const activeTaskCount = tasks.filter((task) => task.status === "In progress").length;
@@ -194,14 +217,16 @@ function CampusDashboard() {
   async function checkBackend() {
     setApiStatus("Connecting…");
     try {
-      const [health, resourceData, queueData, campusData] = await Promise.all([
+      const [health, resourceData, queueData, campusData, studentData] = await Promise.all([
         apiRequest("/api/health"),
         apiRequest("/api/resources"),
         apiRequest("/api/queue"),
         apiRequest("/api/locations"),
+        apiRequest("/api/students"),
       ]);
       setResources(resourceData);
       setQueue(queueData);
+      setStudents(studentData);
       setLocations(campusData.locations.map((location, index) => ({
         ...location,
         x: initialLocations[index]?.x ?? 50,
@@ -269,6 +294,43 @@ function CampusDashboard() {
         ...old,
       ].slice(0, 50));
       logActivity(`${result.served.name} served at ${result.served.service}`);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  async function addCampusStudent(event) {
+    event.preventDefault();
+    try {
+      const student = await apiRequest("/api/students", {
+        method: "POST",
+        body: JSON.stringify({
+          rollNumber: newRollNumber.trim(),
+          name: newStudentName.trim(),
+          department: newDepartment.trim(),
+          year: Number(newStudentYear),
+          email: newStudentEmail.trim(),
+        }),
+      });
+      setStudents((old) => [...old, student]);
+      setNewRollNumber("");
+      setNewStudentName("");
+      setNewDepartment("");
+      setNewStudentYear("1");
+      setNewStudentEmail("");
+      setShowStudentForm(false);
+      logActivity(`Student registered: ${student.name} (${student.rollNumber})`);
+    } catch (error) {
+      setNotice(error.message);
+    }
+  }
+
+  async function deleteCampusStudent(student) {
+    if (!window.confirm(`Remove ${student.name} (${student.rollNumber}) from the student register?`)) return;
+    try {
+      await apiRequest(`/api/students/${student.id}`, { method: "DELETE" });
+      setStudents((old) => old.filter((item) => item.id !== student.id));
+      logActivity(`Student removed from register: ${student.name}`);
     } catch (error) {
       setNotice(error.message);
     }
@@ -347,6 +409,12 @@ function CampusDashboard() {
       ["Report", "Campus operations"],
       ["Generated at", new Date().toLocaleString()],
       ["Data source", apiStatus === "Connected" ? "Local backend (sample seed data)" : "Backend unavailable"],
+      [],
+      ["Student register"],
+      ["Roll number", "Name", "Department", "Year", "Email"],
+      ...students.map((student) => [
+        student.rollNumber, student.name, student.department, student.year, student.email,
+      ]),
       [],
       ["Campus tasks (browser-local)"],
       ["Title", "Area", "Priority", "Status", "Due date", "Owner"],
@@ -470,6 +538,9 @@ function CampusDashboard() {
                 {label === "Tasks" && (
                   <span className="nav-count">{openTasks.length}</span>
                 )}
+                {label === "Students" && (
+                  <span className="nav-count">{students.length}</span>
+                )}
               </button>
             ))}
           </div>
@@ -547,7 +618,7 @@ function CampusDashboard() {
                   <div className="orbit-ring orbit-ring-outer" />
                   <div className="orbit-ring orbit-ring-inner" />
                   <div className="orbit-core">M</div>
-                  <span className="orbit-chip orbit-chip-top">⌂ <b>6</b> locations</span>
+                  <span className="orbit-chip orbit-chip-top">⌂ <b>{locations.length}</b> locations</span>
                   <span className="orbit-chip orbit-chip-bottom">✓ <b>{openTasks.length}</b> open tasks</span>
                 </div>
                 <div className="hero-footer">
@@ -559,15 +630,15 @@ function CampusDashboard() {
                 <strong>{apiStatus === "Connected" ? "Local backend connected" : "Backend unavailable"}</strong>
                 <span>
                   {apiStatus === "Connected"
-                    ? "Starter inventory and queue records are sample data, not MIT operational data."
-                    : "Live inventory and queue data are unavailable. Start the C backend to load its demonstration records."}
+                    ? "Inventory, student and queue records are illustrative demo data, not MIT operational data."
+                    : "Live inventory, student and queue data are unavailable. Start the C backend to load demonstration records."}
                 </span>
               </div>
               <div className="metric-grid">
-                <Metric label="Registered resources" value={resources.length} detail="Tracked records" icon="▤" />
+                <Metric label="Registered students" value={students.length} detail={`${departments.length} academic departments`} icon="♙" />
+                <Metric label="Campus locations" value={locations.length} detail={`${edges.length} connected walking links`} icon="⌖" />
                 <Metric label="Available units" value={`${available}/${total}`} detail="Across all resource types" icon="✓" />
-                <Metric label="Waiting students" value={queue.length} detail="Active service queue" icon="⇄" />
-                <Metric label="Low-stock items" value={lowStockResources.length} detail="At or below 20% available" icon="!" />
+                <Metric label="Priority work" value={openTasks.length} detail={`${lowStockResources.length} stock alerts`} icon="!" />
               </div>
               <div className="section-grid operations-grid">
                 <section className="panel upcoming-panel">
@@ -829,12 +900,70 @@ function CampusDashboard() {
             </>
           )}
 
+          {page === "Students" && (
+            <>
+              <div className="student-summary">
+                <Metric label="Registered students" value={students.length} detail="Campus directory records" icon="♙" />
+                <Metric label="Departments" value={departments.length} detail="Represented in this register" icon="▦" />
+                <Metric label="Currently queued" value={queue.length} detail="Waiting for student services" icon="⇄" />
+                <Metric label="Campus locations" value={locations.length} detail="Available for campus routing" icon="⌖" />
+              </div>
+              <section className="panel student-directory-panel">
+                <div className="panel-header">
+                  <div>
+                    <span className="section-overline">CAMPUS COMMUNITY</span>
+                    <h2>Student directory</h2>
+                    <p>Manage student records separately from the service queue. Records are stored by the local backend.</p>
+                  </div>
+                  <button className="button button-primary" onClick={() => setShowStudentForm((visible) => !visible)}>
+                    {showStudentForm ? "Cancel" : "＋ Add student"}
+                  </button>
+                </div>
+                {showStudentForm && (
+                  <form className="student-form" onSubmit={addCampusStudent}>
+                    <label>Roll number<input required maxLength={63} value={newRollNumber} onChange={(event) => setNewRollNumber(event.target.value)} placeholder="e.g. MIT2024010" /></label>
+                    <label>Full name<input required maxLength={63} value={newStudentName} onChange={(event) => setNewStudentName(event.target.value)} placeholder="Student name" /></label>
+                    <label>Department<input required maxLength={63} value={newDepartment} onChange={(event) => setNewDepartment(event.target.value)} placeholder="Academic department" /></label>
+                    <label>Year of study<select value={newStudentYear} onChange={(event) => setNewStudentYear(event.target.value)}>{[1, 2, 3, 4, 5, 6].map((year) => <option key={year} value={year}>Year {year}</option>)}</select></label>
+                    <label>Email address<input type="email" required maxLength={63} value={newStudentEmail} onChange={(event) => setNewStudentEmail(event.target.value)} placeholder="student@example.edu" /></label>
+                    <button className="button button-primary" type="submit">Register student</button>
+                  </form>
+                )}
+                <div className="student-toolbar">
+                  <div className="search-box">
+                    <span>⌕</span>
+                    <input value={studentSearch} onChange={(event) => setStudentSearch(event.target.value)} placeholder="Search by name, roll number, department..." aria-label="Search students" />
+                  </div>
+                  <span>{filteredStudents.length} of {students.length} students</span>
+                </div>
+                {filteredStudents.length ? (
+                  <div className="table-wrap">
+                    <table className="student-table">
+                      <thead><tr><th>STUDENT</th><th>DEPARTMENT</th><th>YEAR</th><th>EMAIL</th><th>ACTION</th></tr></thead>
+                      <tbody>
+                        {filteredStudents.map((student) => (
+                          <tr key={student.id}>
+                            <td><div className="student-name-cell"><span className="student-avatar">{student.name.slice(0, 1).toUpperCase()}</span><span><strong>{student.name}</strong><small>{student.rollNumber}</small></span></div></td>
+                            <td>{student.department}</td>
+                            <td><span className="year-chip">Year {student.year}</span></td>
+                            <td>{student.email}</td>
+                            <td><button className="table-action danger-action" onClick={() => deleteCampusStudent(student)}>Remove</button></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : <Empty text={students.length ? "No students match your search." : "No student records yet. Add a student to start the register."} />}
+              </section>
+            </>
+          )}
+
           {page === "Navigation" && (
             <section className="panel">
               <div className="panel-header">
                 <div>
                   <h2>Campus route planner</h2>
-                  <p>Dijkstra's shortest-path algorithm · Non-negative edge weights</p>
+                  <p>Dijkstra's shortest-path algorithm · {locations.length} campus destinations</p>
                 </div>
                 <span className="algorithm-tag">DIJKSTRA</span>
               </div>
@@ -870,7 +999,7 @@ function CampusDashboard() {
                   </div>
                 </div>
               ) : <Empty text={apiStatus === "Connected" ? "No route found between these locations." : "Connect to the backend to calculate a route."} />}
-              <p className="footnote">Routes are calculated by the C backend using Dijkstra's algorithm. The campus map is illustrative and may not reflect official MIT campus paths.</p>
+              <p className="footnote">Routes are calculated by the C backend using Dijkstra's algorithm across the illustrative 12-location campus network. This demonstration is not a verified MIT walking map.</p>
             </section>
           )}
 
@@ -1016,6 +1145,7 @@ function CampusDashboard() {
                 <Metric label="Queue requests" value={queue.length} detail="Currently waiting" icon="⇄" />
                 <Metric label="Served this session" value={queueHistory.length} detail="Browser session only" icon="✓" />
                 <Metric label="Open tasks" value={openTasks.length} detail="Saved in this browser" icon="◷" />
+                <Metric label="Registered students" value={students.length} detail="Campus directory records" icon="♙" />
               </div>
               <p className="footnote">
                 This report uses local backend demonstration data. Campus tasks are saved in this browser; served-request history lasts for this browser session only.
