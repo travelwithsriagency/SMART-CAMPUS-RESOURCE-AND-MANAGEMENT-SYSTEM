@@ -1,7 +1,28 @@
 import { useEffect, useRef, useState } from "react";
+import {
+  onAuthStateChanged,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
+  signOut,
+} from "firebase/auth";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import "./style.css";
+import { auth, firebaseConfigured } from "./firebase";
+import {
+  addCampusStudent as createCampusStudent,
+  addQueueEntry,
+  addTask as createTask,
+  deleteCampusStudent as removeCampusStudent,
+  deleteResource as removeResource,
+  deleteTask as removeTask,
+  getRecords,
+  saveResource as persistResource,
+  serveNextQueueEntry,
+  toggleResourceAvailability,
+  updateTask,
+  watchRecords,
+} from "./firestoreData";
 
 const initialLocations = [
   { id: 0, name: "Main Gate", x: 20, y: 52 },
@@ -60,28 +81,6 @@ function dateOffset(days) {
   ].join("-");
 }
 
-const initialTasks = [
-  { id: "task-1", title: "Inspect lecture hall projectors", description: "Check focus, HDMI inputs and remote batteries before the next lecture block.", area: "Lecture Hall A", priority: "High", status: "In progress", dueDate: dateOffset(0), owner: "Facilities" },
-  { id: "task-2", title: "Prepare the electronics lab", description: "Verify bench power supplies and return shared test equipment to storage.", area: "Department Block", priority: "High", status: "To do", dueDate: dateOffset(1), owner: "Lab team" },
-  { id: "task-3", title: "Refresh library study rooms", description: "Review room readiness and update availability after the morning checks.", area: "Library", priority: "Medium", status: "To do", dueDate: dateOffset(2), owner: "Library team" },
-  { id: "task-4", title: "Restock workshop safety kits", description: "Count first-aid and safety supplies in the student workshop.", area: "Workshop", priority: "Medium", status: "In progress", dueDate: dateOffset(3), owner: "Safety team" },
-  { id: "task-5", title: "Review seminar hall setup", description: "Confirm seating layout, display connection and room signage.", area: "Main Block", priority: "Low", status: "Done", dueDate: dateOffset(-1), owner: "Events team" },
-  { id: "task-6", title: "Update campus equipment register", description: "Reconcile AV equipment counts with the latest inventory check.", area: "Campus-wide", priority: "Low", status: "To do", dueDate: dateOffset(5), owner: "Operations" },
-];
-
-function loadTasks() {
-  try {
-    const savedTasks = window.localStorage.getItem("smart-campus-tasks");
-    if (!savedTasks) return initialTasks;
-    const parsedTasks = JSON.parse(savedTasks);
-    if (Array.isArray(parsedTasks)) return parsedTasks;
-    throw new Error("Saved campus tasks are not in the expected format.");
-  } catch (error) {
-    console.error("Could not load saved campus tasks.", error);
-    return initialTasks;
-  }
-}
-
 async function apiRequest(path, options = {}) {
   let response;
   try {
@@ -130,18 +129,129 @@ const navGroups = [
 ];
 
 export default function App() {
-  return <CampusDashboard />;
+  const [user, setUser] = useState(null);
+  const [authLoading, setAuthLoading] = useState(true);
+
+  useEffect(() => {
+    if (!auth) {
+      setAuthLoading(false);
+      return undefined;
+    }
+    return onAuthStateChanged(auth, (currentUser) => {
+      setUser(currentUser);
+      setAuthLoading(false);
+    });
+  }, []);
+
+  if (!firebaseConfigured) return <FirebaseSetupScreen />;
+  if (authLoading) return <div className="auth-page"><p>Checking sign-in…</p></div>;
+  if (!user) return <LoginScreen />;
+  return <CampusDashboard user={user} />;
 }
 
-function CampusDashboard() {
+function FirebaseSetupScreen() {
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand-mark auth-brand-mark">M</div>
+        <span className="section-overline">FIREBASE SETUP</span>
+        <h1>Connect your Firebase project</h1>
+        <p>
+          Add your Firebase Web App values to the root <code>.env</code> file,
+          then restart the Vite development server.
+        </p>
+        <p>
+          Use <code>.env.example</code> as the template. Find these values in
+          Firebase Console → Project settings → Your apps → Web app.
+        </p>
+      </section>
+    </main>
+  );
+}
+
+function LoginScreen() {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+  const [message, setMessage] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setMessage("");
+    setSubmitting(true);
+    try {
+      await signInWithEmailAndPassword(auth, email.trim(), password);
+    } catch (signInError) {
+      const messages = {
+        "auth/invalid-credential": "Email or password is incorrect.",
+        "auth/invalid-email": "Enter a valid email address.",
+        "auth/too-many-requests": "Too many attempts. Wait a little and try again.",
+        "auth/network-request-failed": "Could not reach Firebase. Check your internet connection.",
+      };
+      setError(messages[signInError.code] || signInError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  async function handlePasswordReset() {
+    setError("");
+    setMessage("");
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      return;
+    }
+
+    setSubmitting(true);
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setMessage("If an account exists for that email, Firebase has sent a password reset link.");
+    } catch (resetError) {
+      setError(resetError.message);
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <main className="auth-page">
+      <section className="auth-card">
+        <div className="brand-mark auth-brand-mark">M</div>
+        <span className="section-overline">CAMPUS PORTAL</span>
+        <h1>Sign in</h1>
+        <p>Use an account created by your Firebase project administrator.</p>
+        {error && <div className="auth-error" role="alert">{error}</div>}
+        {message && <div className="auth-message" role="status">{message}</div>}
+        <form className="auth-form" onSubmit={handleSubmit}>
+          <label>Email address
+            <input type="email" autoComplete="username" required value={email} onChange={(event) => setEmail(event.target.value)} />
+          </label>
+          <label>Password
+            <input type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          <button className="button button-primary" type="submit" disabled={submitting}>
+            {submitting ? "Signing in…" : "Sign in"}
+          </button>
+        </form>
+        <button className="auth-reset-button" type="button" onClick={handlePasswordReset} disabled={submitting}>
+          Send password reset email
+        </button>
+      </section>
+    </main>
+  );
+}
+
+function CampusDashboard({ user }) {
   const [page, setPage] = useState("Overview");
   const [resources, setResources] = useState([]);
   const [students, setStudents] = useState([]);
-  const [tasks, setTasks] = useState(loadTasks);
+  const [tasks, setTasks] = useState([]);
   const [queue, setQueue] = useState([]);
   const [queueHistory, setQueueHistory] = useState([]);
-  const [locations, setLocations] = useState(initialLocations);
-  const [edges, setEdges] = useState(initialEdges);
+  const [locations] = useState(initialLocations);
+  const [edges] = useState(initialEdges);
   const [search, setSearch] = useState("");
   const [resourceCategoryFilter, setResourceCategoryFilter] = useState("All categories");
   const [queueSearch, setQueueSearch] = useState("");
@@ -232,36 +342,29 @@ function CampusDashboard() {
     setNotice(message);
   }
 
-  useEffect(() => {
+  async function handleSignOut() {
     try {
-      window.localStorage.setItem("smart-campus-tasks", JSON.stringify(tasks));
+      await signOut(auth);
     } catch (error) {
-      console.error("Could not save campus tasks.", error);
-      setNotice("Tasks changed, but this browser could not save them locally.");
+      setNotice(error.message);
     }
-  }, [tasks]);
+  }
 
-  async function checkBackend() {
+  async function refreshData() {
     setApiStatus("Connecting…");
     try {
-      const [health, resourceData, queueData, campusData, studentData] = await Promise.all([
-        apiRequest("/api/health"),
-        apiRequest("/api/resources"),
-        apiRequest("/api/queue"),
-        apiRequest("/api/locations"),
-        apiRequest("/api/students"),
+      const [resourceData, queueData, studentData, taskData] = await Promise.all([
+        getRecords("resources"),
+        getRecords("queue"),
+        getRecords("students"),
+        getRecords("tasks"),
       ]);
       setResources(resourceData);
       setQueue(queueData);
       setStudents(studentData);
-      setLocations(campusData.locations.map((location, index) => ({
-        ...location,
-        x: initialLocations[index]?.x ?? 50,
-        y: initialLocations[index]?.y ?? 50,
-      })));
-      setEdges(campusData.edges.map(({ from: start, to: end, weight }) => [start, end, weight]));
-      setApiStatus(health.status || "Connected");
-      logActivity("Backend health check successful");
+      setTasks(taskData);
+      setApiStatus("Connected");
+      logActivity("Firebase data refreshed");
     } catch (error) {
       setApiStatus("Unavailable");
       setNotice(error.message);
@@ -269,7 +372,19 @@ function CampusDashboard() {
   }
 
   useEffect(() => {
-    checkBackend();
+    const stopWatching = [
+      watchRecords("resources", setResources, handleFirestoreError),
+      watchRecords("queue", setQueue, handleFirestoreError),
+      watchRecords("students", setStudents, handleFirestoreError),
+      watchRecords("tasks", setTasks, handleFirestoreError),
+    ];
+    setApiStatus("Connected");
+    return () => stopWatching.forEach((unsubscribe) => unsubscribe());
+
+    function handleFirestoreError(error) {
+      setApiStatus("Unavailable");
+      setNotice(error.message);
+    }
   }, []);
 
   useEffect(() => {
@@ -363,11 +478,7 @@ function CampusDashboard() {
     event.preventDefault();
     if (!newStudent.trim()) return;
     try {
-      const entry = await apiRequest("/api/queue", {
-        method: "POST",
-        body: JSON.stringify({ name: newStudent.trim(), service: newService }),
-      });
-      setQueue((old) => [...old, entry]);
+      const entry = await addQueueEntry({ name: newStudent.trim(), service: newService });
       setNewStudent("");
       logActivity(`${entry.name} added to the service queue`);
     } catch (error) {
@@ -381,13 +492,12 @@ function CampusDashboard() {
       return;
     }
     try {
-      const result = await apiRequest("/api/queue/serve", { method: "POST" });
-      setQueue((old) => old.filter((student) => student.id !== result.served.id));
+      const served = await serveNextQueueEntry();
       setQueueHistory((old) => [
-        { ...result.served, servedAt: new Date().toLocaleString() },
+        { ...served, servedAt: new Date().toLocaleString() },
         ...old,
       ].slice(0, 50));
-      logActivity(`${result.served.name} served at ${result.served.service}`);
+      logActivity(`${served.name} served at ${served.service}`);
     } catch (error) {
       setNotice(error.message);
     }
@@ -396,17 +506,13 @@ function CampusDashboard() {
   async function addCampusStudent(event) {
     event.preventDefault();
     try {
-      const student = await apiRequest("/api/students", {
-        method: "POST",
-        body: JSON.stringify({
-          rollNumber: newRollNumber.trim(),
-          name: newStudentName.trim(),
-          department: newDepartment.trim(),
-          year: Number(newStudentYear),
-          email: newStudentEmail.trim(),
-        }),
+      const student = await createCampusStudent({
+        rollNumber: newRollNumber.trim(),
+        name: newStudentName.trim(),
+        department: newDepartment.trim(),
+        year: Number(newStudentYear),
+        email: newStudentEmail.trim(),
       });
-      setStudents((old) => [...old, student]);
       setNewRollNumber("");
       setNewStudentName("");
       setNewDepartment("");
@@ -422,8 +528,7 @@ function CampusDashboard() {
   async function deleteCampusStudent(student) {
     if (!window.confirm(`Remove ${student.name} (${student.rollNumber}) from the student register?`)) return;
     try {
-      await apiRequest(`/api/students/${student.id}`, { method: "DELETE" });
-      setStudents((old) => old.filter((item) => item.id !== student.id));
+      await removeCampusStudent(student.id);
       logActivity(`Student removed from register: ${student.name}`);
     } catch (error) {
       setNotice(error.message);
@@ -450,18 +555,7 @@ function CampusDashboard() {
         total: Number(resourceTotal),
       };
       const isEditing = editingResourceId !== null;
-      const entry = await apiRequest(
-        isEditing ? `/api/resources/${editingResourceId}` : "/api/resources",
-        {
-          method: isEditing ? "PUT" : "POST",
-          body: JSON.stringify(resourceData),
-        }
-      );
-      if (isEditing) {
-        setResources((old) => old.map((item) => item.id === entry.id ? entry : item));
-      } else {
-        setResources((old) => [...old, entry]);
-      }
+      const entry = await persistResource(resourceData, editingResourceId);
       setNewResource("");
       setResourceLocation("");
       setResourceTotal(1);
@@ -476,8 +570,7 @@ function CampusDashboard() {
   async function deleteResource(resource) {
     if (!window.confirm(`Delete "${resource.name}" from the inventory?`)) return;
     try {
-      await apiRequest(`/api/resources/${resource.id}`, { method: "DELETE" });
-      setResources((old) => old.filter((item) => item.id !== resource.id));
+      await removeResource(resource.id);
       logActivity(`Resource deleted: ${resource.name}`);
     } catch (error) {
       setNotice(error.message);
@@ -502,7 +595,7 @@ function CampusDashboard() {
     const rows = [
       ["Report", "Campus operations"],
       ["Generated at", new Date().toLocaleString()],
-      ["Data source", apiStatus === "Connected" ? "Local backend (sample seed data)" : "Backend unavailable"],
+      ["Data source", apiStatus === "Connected" ? "Firebase Firestore (shared campus data)" : "Firebase unavailable"],
       [],
       ["Student register"],
       ["Roll number", "Name", "Department", "Year", "Email"],
@@ -510,7 +603,7 @@ function CampusDashboard() {
         student.rollNumber, student.name, student.department, student.year, student.email,
       ]),
       [],
-      ["Campus tasks (browser-local)"],
+      ["Campus tasks (Firestore)"],
       ["Title", "Area", "Priority", "Status", "Due date", "Owner"],
       ...tasks.map((task) => [
         task.title, task.area, task.priority, task.status, task.dueDate, task.owner,
@@ -552,19 +645,17 @@ function CampusDashboard() {
 
   async function toggleAvailability(id) {
     try {
-      const updated = await apiRequest(`/api/resources/${id}/use`, { method: "POST" });
-      setResources((old) => old.map((item) => item.id === id ? updated : item));
+      const updated = await toggleResourceAvailability(id);
       logActivity(`Resource availability updated: ${updated.name}`);
     } catch (error) {
       setNotice(error.message);
     }
   }
 
-  function addTask(event) {
+  async function addTask(event) {
     event.preventDefault();
     if (!newTaskTitle.trim()) return;
-    const task = {
-      id: `task-${Date.now()}`,
+    const taskData = {
       title: newTaskTitle.trim(),
       description: newTaskDescription.trim() || "New campus operations task.",
       area: newTaskArea.trim() || "Campus-wide",
@@ -573,30 +664,41 @@ function CampusDashboard() {
       dueDate: newTaskDueDate,
       owner: newTaskOwner.trim() || "Unassigned",
     };
-    setTasks((old) => [task, ...old]);
-    setNewTaskTitle("");
-    setNewTaskDescription("");
-    setNewTaskArea("");
-    setNewTaskOwner("");
-    setNewTaskPriority("Medium");
-    setNewTaskDueDate(dateOffset(2));
-    setShowTaskForm(false);
-    logActivity(`Task created: ${task.title}`);
+    try {
+      const task = await createTask(taskData);
+      setNewTaskTitle("");
+      setNewTaskDescription("");
+      setNewTaskArea("");
+      setNewTaskOwner("");
+      setNewTaskPriority("Medium");
+      setNewTaskDueDate(dateOffset(2));
+      setShowTaskForm(false);
+      logActivity(`Task created: ${task.title}`);
+    } catch (error) {
+      setNotice(error.message);
+    }
   }
 
-  function advanceTask(task) {
+  async function advanceTask(task) {
     const nextStatus = task.status === "Done"
       ? "To do"
       : taskStatuses[taskStatuses.indexOf(task.status) + 1];
-    setTasks((old) => old.map((item) =>
-      item.id === task.id ? { ...item, status: nextStatus } : item
-    ));
-    logActivity(`Task ${nextStatus === "Done" ? "completed" : "moved to " + nextStatus.toLowerCase()}: ${task.title}`);
+    const updatedTask = { ...task, status: nextStatus };
+    try {
+      await updateTask(updatedTask);
+      logActivity(`Task ${nextStatus === "Done" ? "completed" : "moved to " + nextStatus.toLowerCase()}: ${task.title}`);
+    } catch (error) {
+      setNotice(error.message);
+    }
   }
 
-  function deleteTask(task) {
-    setTasks((old) => old.filter((item) => item.id !== task.id));
-    logActivity(`Task removed: ${task.title}`);
+  async function deleteTask(task) {
+    try {
+      await removeTask(task.id);
+      logActivity(`Task removed: ${task.title}`);
+    } catch (error) {
+      setNotice(error.message);
+    }
   }
 
   return (
@@ -652,8 +754,8 @@ function CampusDashboard() {
             <div className="sidebar-status">Campus portal</div>
             <div className="sidebar-small">{apiStatus}</div>
           </div>
-          <button className="header-signin" onClick={() => { setPage("Overview"); setNotice(""); }}>
-            Campus portal <span>↗</span>
+          <button className="header-signin" onClick={handleSignOut}>
+            Sign out <span>↗</span>
           </button>
         </div>
       </aside>
@@ -668,9 +770,10 @@ function CampusDashboard() {
           <div className="topbar-right">
             <span className="environment-pill">
               <span className="small-dot" />
-              {apiStatus === "Connected" ? "Campus services online" : apiStatus}
+              {apiStatus === "Connected" ? "Firebase online" : apiStatus}
             </span>
-            <button className="button button-secondary button-small" onClick={checkBackend}>↻ Refresh</button>
+            <span className="signed-in-email">{user.email}</span>
+            <button className="button button-secondary button-small" onClick={refreshData}>↻ Refresh</button>
           </div>
         </header>
 
@@ -791,7 +894,7 @@ function CampusDashboard() {
                         <div className="category-track"><span className={`category-fill category-fill-${index % 5}`} style={{ width: `${count / maxCategoryTotal * 100}%` }} /></div>
                       </div>
                     ))}
-                    {!resources.length && <Empty text="Connect to the backend to load inventory." />}
+                    {!resources.length && <Empty text="No resources yet. Add the first item in Resources." />}
                   </div>
                   <div className="inventory-foot"><span>Availability rate</span><strong>{total ? Math.round(available / total * 100) : 0}%</strong></div>
                 </section>
@@ -801,7 +904,7 @@ function CampusDashboard() {
                   <div className="panel-header">
                     <div>
                       <h2>Inventory alerts</h2>
-                      <p>Computed from current backend inventory; threshold is 20% available.</p>
+                      <p>Computed from current Firestore inventory; threshold is 20% available.</p>
                     </div>
                     <button className="text-button" onClick={() => setPage("Resources")}>Review inventory ↗</button>
                   </div>
@@ -869,7 +972,7 @@ function CampusDashboard() {
                 <div className="panel-header">
                   <div>
                     <h2>Resource availability</h2>
-                    <p>Campus inventory from the backend</p>
+                    <p>Campus inventory shared through Firestore</p>
                   </div>
                   <button className="text-button" onClick={() => setPage("Resources")}>Manage resources ↗</button>
                 </div>
@@ -892,7 +995,7 @@ function CampusDashboard() {
                 <div>
                   <span className="section-overline">CAMPUS WORKSPACE</span>
                   <h2>Operations task board</h2>
-                  <p>Coordinate campus work and keep priorities moving. Tasks are saved in this browser.</p>
+                  <p>Coordinate campus work and keep priorities moving. Updates are shared through Firestore.</p>
                 </div>
                 <button className="button button-primary" onClick={() => setShowTaskForm((visible) => !visible)}>
                   {showTaskForm ? "Cancel" : "＋ New task"}
@@ -938,7 +1041,7 @@ function CampusDashboard() {
                   );
                 })}
               </div>
-              <p className="footnote">Tasks are stored locally in this browser and are not shared across devices or saved to the campus backend.</p>
+              <p className="footnote">Tasks are saved in Firestore and shared with signed-in campus users.</p>
             </section>
           )}
 
@@ -1033,7 +1136,7 @@ function CampusDashboard() {
                   <div>
                     <span className="section-overline">CAMPUS COMMUNITY</span>
                     <h2>Student directory</h2>
-                    <p>Manage student records separately from the service queue. Records are stored by the local backend.</p>
+                    <p>Manage student records separately from the service queue. Records are stored in Firestore.</p>
                   </div>
                   <button className="button button-primary" onClick={() => setShowStudentForm((visible) => !visible)}>
                     {showStudentForm ? "Cancel" : "＋ Add student"}
@@ -1245,7 +1348,7 @@ function CampusDashboard() {
                     ))}
                   </select>
                 </label>
-                <button className="button button-primary" type="submit" disabled={apiStatus !== "Connected"}>Run traversal</button>
+                <button className="button button-primary" type="submit">Run traversal</button>
               </form>
               {traversal && (
                 <div className="traversal-result" aria-live="polite">
@@ -1290,20 +1393,20 @@ function CampusDashboard() {
               <div className="panel-header">
                 <div>
                   <h2>Campus operations report</h2>
-                  <p>Export campus tasks, backend inventory, queue and session-local service history.</p>
+                  <p>Export Firestore tasks, inventory, queue and session-local service history.</p>
                 </div>
                 <button className="button button-primary" onClick={downloadReport}>Download CSV</button>
               </div>
               <div className="report-summary">
-                <Metric label="Inventory records" value={resources.length} detail="Current backend records" icon="▤" />
+                <Metric label="Inventory records" value={resources.length} detail="Current Firestore records" icon="▤" />
                 <Metric label="Units in use" value={total - available} detail="Calculated as total minus available" icon="↗" />
                 <Metric label="Queue requests" value={queue.length} detail="Currently waiting" icon="⇄" />
                 <Metric label="Served this session" value={queueHistory.length} detail="Browser session only" icon="✓" />
-                <Metric label="Open tasks" value={openTasks.length} detail="Saved in this browser" icon="◷" />
+                <Metric label="Open tasks" value={openTasks.length} detail="Shared through Firestore" icon="◷" />
                 <Metric label="Registered students" value={students.length} detail="Campus directory records" icon="♙" />
               </div>
               <p className="footnote">
-                This report uses local backend demonstration data. Campus tasks are saved in this browser; served-request history lasts for this browser session only.
+                This report uses shared Firestore data. Served-request history lasts for this browser session only.
               </p>
             </section>
           )}

@@ -1,6 +1,9 @@
 node_modules/
 dist/
 .vscode/
+.env
+.env.*
+!.env.example
 *.exe
 campus-backend/campus_server
 mit-smart-campus-frontend.zip

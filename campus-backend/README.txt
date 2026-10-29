@@ -24,6 +24,28 @@ frontend from the project root:
 Open http://localhost:5173. Vite forwards /api requests to the C backend at
 http://localhost:8080, so the frontend and API work through one browser origin.
 
+FIREBASE SETUP (REQUIRED FOR CAMPUS DATA)
+1. In Firebase Console, add a Web app to your existing project and create
+   or enable a Cloud Firestore database.
+2. Enable Authentication > Sign-in method > Email/Password. Create user
+   accounts in Authentication > Users; this app intentionally has no public
+   sign-up form.
+3. Copy the root .env.example file to .env and fill in the Web App values from
+   Project settings > Your apps. Restart the Vite server after editing .env.
+   The Web App config is intended for browser use; never use a service-account
+   key in the frontend.
+4. Publish the contents of the root firestore.rules file in Firestore
+   Database > Rules. The checked-in rules allow access only to
+   sridhar.govindan2008@gmail.com. Update the email allowlist in the rules
+   before adding another campus account.
+5. Sign in with an account created in the Firebase Console. Add resource,
+   student, queue, and task records in the app; Firestore collections start
+   empty and the old in-memory C demo data is not automatically migrated.
+
+The app stores shared resources, students, queue entries, and tasks in
+Firestore. The C backend is still used by the DSA Explorer for traversal;
+the other campus data features no longer depend on its in-memory data.
+
 API ENDPOINTS
 GET    /api/health                  server status and counts
 GET    /api/locations               campus locations and weighted edges
@@ -54,11 +76,10 @@ DATA STRUCTURES USED
 - Location ids are 0..11 (see /api/locations)
 
 NOTES
-- Data is held in memory and resets when the server restarts. MongoDB
-  or file-backed persistence is not implemented.
-- The frontend loads inventory, queue, and location data from these API
-  endpoints. Resource and queue actions are persisted in the backend's
-  in-memory state.
+- The C backend's data structures are in memory and reset when it restarts.
+  The React app now uses Firestore for shared campus records.
+- The frontend stores resources, students, queue entries, and tasks in
+  Firebase Firestore. The C server remains necessary for DSA traversal.
 - The Navigation page uses mapped campus places and OpenStreetMap tiles;
   pedestrian directions are requested from the public Valhalla routing
   service. This map works without the local C backend but requires internet
@@ -73,13 +94,8 @@ NOTES
   real campus walking distances.
 - Seed inventory, queue records, and graph locations are illustrative
   demonstration data, not verified MIT operational data.
-- The student directory and campus locations use illustrative demonstration
-  records. Student records are held in memory and reset when the backend
-  restarts.
-- The task board starts with illustrative campus operations tasks and saves
-  task changes in the current browser's local storage. Tasks are not shared
-  with the backend or other browsers.
-- Resource and queue seed records are sample data; backend changes reset
-  when the server restarts.
+- Campus locations and resource/queue seed records in the C server are
+  illustrative demonstration data. They are no longer used for shared
+  inventory, student directory, queue, or task data in the Firebase-backed app.
 - Resource names are unique without regard to case. Resource totals must be
   between 1 and 10000; edits cannot reduce stock below units currently in use.

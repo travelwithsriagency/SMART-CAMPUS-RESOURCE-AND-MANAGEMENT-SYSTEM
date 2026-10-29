@@ -1,0 +1,26 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isCampusUser() {
+      return request.auth != null
+        && request.auth.token.email == "sridhar.govindan2008@gmail.com";
+    }
+
+    match /resources/{recordId} {
+      allow read, write: if isCampusUser();
+    }
+
+    match /students/{recordId} {
+      allow read, write: if isCampusUser();
+    }
+
+    match /queue/{recordId} {
+      allow read, write: if isCampusUser();
+    }
+
+    match /tasks/{recordId} {
+      allow read, write: if isCampusUser();
+    }
+  }
+}
