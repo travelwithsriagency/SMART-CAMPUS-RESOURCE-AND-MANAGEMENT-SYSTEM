@@ -56,6 +56,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Configure Firebase web app
+        run: cp .env.example .env
+
       - name: Build site
         run: npm run build
 
