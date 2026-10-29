@@ -31,7 +31,7 @@
         let manifest;
 
         for (const candidate of manifestUrls) {
-          const response = await fetch(candidate);
+          const response = await fetch(candidate, { cache: "no-store" });
           if (response.ok) {
             try {
               const candidateManifest = await response.json();
